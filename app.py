@@ -20,8 +20,10 @@ creds = Credentials.from_service_account_info(
 
 client = gspread.authorize(creds)
 
-# ✅ IMPORTANT: USE EXACT SHEET + TAB NAME
-sheet = client.open("Hackathon_Data").worksheet("Sheet1")
+# 🔥 FINAL FIX: USE FULL URL (MOST RELIABLE)
+SHEET_URL = "https://docs.google.com/spreadsheets/d/1lLjkJ2IFxZTbKhJV_KCoTZqD1fKrDN5OT5e1qhe7iCE/edit#gid=0"
+
+sheet = client.open_by_url(SHEET_URL).worksheet("Sheet1")
 
 # ---------------------------
 # FUNCTIONS
@@ -43,7 +45,6 @@ def add_data(row):
 
 def update_scores(row_index, scores):
     try:
-        # Columns: Idea(E=5), Innovation(F=6), Feasibility(G=7), Impact(H=8)
         for i, score in enumerate(scores):
             sheet.update_cell(row_index, 5 + i, score)
 
@@ -138,8 +139,5 @@ elif menu == "Evaluate":
         impact = st.slider("Impact", 0, 10)
 
         if st.button("Save Evaluation"):
-            # +2 because:
-            # row 1 = header
-            # dataframe index starts at 0
             update_scores(idx + 2, [idea_score, innovation, feasibility, impact])
             st.rerun()
