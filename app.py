@@ -16,11 +16,24 @@ menu = st.sidebar.selectbox("Navigation", ["Home", "Submit Idea", "View Submissi
 # -------------------- FILE SETUP --------------------
 file = "data.csv"
 
-columns = ["Team Name", "Members", "Domain", "Idea", "Innovation", "Feasibility", "Impact", "Total"]
+required_columns = ["Team Name", "Members", "Domain", "Idea", "Innovation", "Feasibility", "Impact", "Total"]
 
+# Create or fix file
 if not os.path.exists(file):
-    df = pd.DataFrame(columns=columns)
+    df = pd.DataFrame(columns=required_columns)
     df.to_csv(file, index=False)
+else:
+    df = pd.read_csv(file)
+    
+    # Add missing columns if older file
+    for col in required_columns:
+        if col not in df.columns:
+            df[col] = 0
+    
+    df.to_csv(file, index=False)
+
+# Reload clean data
+df = pd.read_csv(file)
 
 # -------------------- HOME --------------------
 if menu == "Home":
@@ -53,7 +66,7 @@ elif menu == "Submit Idea":
         if submit:
             if team and members and idea:
                 new_data = pd.DataFrame([[team, members, domain, idea, 0, 0, 0, 0]],
-                                        columns=columns)
+                                        columns=required_columns)
                 new_data.to_csv(file, mode='a', header=False, index=False)
 
                 st.success("✅ Submission Recorded Successfully!")
@@ -73,7 +86,7 @@ elif menu == "View Submissions":
     else:
         st.info("No submissions yet")
 
-# -------------------- EVALUATION --------------------
+# -------------------- EVALUATE --------------------
 elif menu == "Evaluate":
     st.markdown("## 🧮 Evaluate Projects")
 
@@ -85,9 +98,14 @@ elif menu == "Evaluate":
 
         index = df[df["Team Name"] == selected_team].index[0]
 
-        innovation = st.slider("Innovation (0-10)", 0, 10, int(df.at[index, "Innovation"]))
-        feasibility = st.slider("Feasibility (0-10)", 0, 10, int(df.at[index, "Feasibility"]))
-        impact = st.slider("Impact (0-10)", 0, 10, int(df.at[index, "Impact"]))
+        # Safe access (no crash)
+        innovation_val = int(df.at[index, "Innovation"]) if pd.notna(df.at[index, "Innovation"]) else 0
+        feasibility_val = int(df.at[index, "Feasibility"]) if pd.notna(df.at[index, "Feasibility"]) else 0
+        impact_val = int(df.at[index, "Impact"]) if pd.notna(df.at[index, "Impact"]) else 0
+
+        innovation = st.slider("Innovation (0-10)", 0, 10, innovation_val)
+        feasibility = st.slider("Feasibility (0-10)", 0, 10, feasibility_val)
+        impact = st.slider("Impact (0-10)", 0, 10, impact_val)
 
         total = innovation + feasibility + impact
 
