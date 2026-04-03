@@ -13,8 +13,6 @@ from io import BytesIO
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet
-from streamlit_autorefresh import st_autorefresh
-import pytz
 
 # ------------ CONFIG ------------
 st.set_page_config(page_title="CSE Hackathon Platform", layout="wide")
@@ -25,8 +23,10 @@ ADMIN_USER = st.secrets.get("admin_user", "admin")
 ADMIN_PASS = st.secrets.get("admin_pass", "admin123")
 
 SUBMISSION_HEADERS = ["Team Name", "Members", "Domain", "Idea"]
-EVALUATION_HEADERS = ["Team Name", "Judge", "Idea Score", "Innovation",
-                      "Technical", "Presentation", "Impact", "Total", "Time"]
+EVALUATION_HEADERS = [
+    "Team Name", "Judge", "Idea Score", "Innovation",
+    "Technical", "Presentation", "Impact", "Total", "Time"
+]
 
 WEIGHTS = {
     "Idea Score": 0.20,
@@ -35,8 +35,6 @@ WEIGHTS = {
     "Presentation": 0.10,
     "Impact": 0.10
 }
-
-IST = pytz.timezone("Asia/Kolkata")
 
 # ------------ SESSION STATE ------------
 if "role" not in st.session_state:
@@ -74,18 +72,9 @@ def connect():
 wb = connect()
 
 def ensure_sheet(name, headers):
-    # Try to open existing worksheet
-    try:
-        ws = wb.worksheet(name)
-    except Exception:
-        # If not found, try to create it
-        try:
-            ws = wb.add_worksheet(title=name, rows=1000, cols=20)
-        except Exception:
-            # Fallback: use first worksheet to avoid crashing
-            ws = wb.get_worksheet(0)
+    # Assumes you already created "Submissions" and "Evaluations" tabs manually
+    ws = wb.worksheet(name)
 
-    # Ensure headers
     try:
         values = ws.get_all_values()
     except Exception:
@@ -93,12 +82,13 @@ def ensure_sheet(name, headers):
     if not values or values[0] != headers:
         ws.clear()
         ws.append_row(headers)
-
     return ws
 
 sub_sheet = ensure_sheet("Submissions", SUBMISSION_HEADERS)
 eval_sheet = ensure_sheet("Evaluations", EVALUATION_HEADERS)
 
+# ------------ DATA LOADERS (CACHED) ------------
+@st.cache_data(ttl=60)
 def load_sub():
     try:
         df = pd.DataFrame(sub_sheet.get_all_records())
@@ -113,6 +103,7 @@ def load_sub():
         sub_sheet.append_row(SUBMISSION_HEADERS)
         return pd.DataFrame(columns=SUBMISSION_HEADERS)
 
+@st.cache_data(ttl=60)
 def load_eval():
     try:
         df = pd.DataFrame(eval_sheet.get_all_records())
@@ -244,6 +235,7 @@ if choice == "Submit":
                     st.error("Team name already exists.")
                 else:
                     sub_sheet.append_row([t_clean, m, d, i])
+                    st.cache_data.clear()
                     st.success("✅ Submission recorded")
 
 # ------------ BULK UPLOAD ------------
@@ -255,6 +247,7 @@ if choice == "Bulk Upload":
         if st.button("Upload"):
             for _, r in df.iterrows():
                 sub_sheet.append_row(r.tolist())
+            st.cache_data.clear()
             st.success("✅ Bulk data uploaded")
 
 # ------------ EVALUATE ------------
@@ -288,7 +281,7 @@ if choice == "Evaluate":
                 st.info(f"Total Score: {total}")
 
                 if st.button("Submit Score"):
-                    now_ist = datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S")
+                    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     eval_sheet.append_row([
                         team,
                         st.session_state.judge_name,
@@ -298,8 +291,9 @@ if choice == "Evaluate":
                         pres,
                         impact,
                         total,
-                        now_ist
+                        now_str
                     ])
+                    st.cache_data.clear()
                     st.success("✅ Evaluation submitted")
 
 # ------------ LEADERBOARD ------------
@@ -307,11 +301,7 @@ if choice == "Leaderboard":
     df = get_leaderboard()
     if not df.empty:
         display_cols = [c for c in ["Team Name", "Domain", "Final Score"] if c in df.columns]
-        st.dataframe(
-            df[display_cols].style.background_gradient(
-                subset=["Final Score"], cmap="Greens"
-            )
-        )
+        st.dataframe(df[display_cols])
         top = df.iloc[0]["Team Name"]
         st.markdown(f"🏆 **Current Leader:** {top}")
         if st.session_state.prev_top_team != top:
@@ -350,6 +340,3 @@ if choice == "Control":
     if st.button("Reset Timer"):
         st.session_state.event_end = datetime.now() + timedelta(minutes=mins)
         st.success("Timer reset successfully!")
-
-# ------------ AUTO REFRESH ------------
-st_autorefresh(interval=30000, key="data_refresh")
