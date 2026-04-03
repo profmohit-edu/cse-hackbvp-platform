@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
+from datetime import datetime
 
 # ---------------------------
 # PAGE CONFIG
@@ -61,21 +62,21 @@ Bharati Vidyapeeth’s College of Engineering, Delhi
 # ---------------------------
 # ADMIN LOGIN SETTINGS
 # ---------------------------
-# IMPORTANT:
 # Add these in Streamlit Secrets:
 #
-# admin_username = "your_username"
-# admin_password = "your_password"
+# admin_username = "admin"
+# admin_password = "admin123"
 #
-# Example:
-# admin_username = "mohit"
-# admin_password = "hackathon123"
+# plus your existing [gcp_service_account] block
 
 ADMIN_USERNAME = st.secrets.get("admin_username", "admin")
 ADMIN_PASSWORD = st.secrets.get("admin_password", "admin123")
 
 if "is_admin" not in st.session_state:
     st.session_state.is_admin = False
+
+if "evaluator_name" not in st.session_state:
+    st.session_state.evaluator_name = ""
 
 # ---------------------------
 # GOOGLE SHEETS CONNECTION
@@ -105,40 +106,82 @@ def load_data():
 def add_data(row):
     sheet.append_row(row)
 
-def update_scores(row_index, scores):
-    for i, score in enumerate(scores):
-        sheet.update_cell(row_index, 5 + i, score)
-    sheet.update_cell(row_index, 9, sum(scores))
+def update_scores(row_index, scores, evaluator_name):
+    idea_score, innovation, feasibility, impact = scores
+    total = sum(scores)
+    eval_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # Columns:
+    # A Team Name
+    # B Members
+    # C Domain
+    # D Idea
+    # E Idea Score
+    # F Innovation
+    # G Feasibility
+    # H Impact
+    # I Total
+    # J Evaluated By
+    # K Evaluation Time
+
+    sheet.update_cell(row_index, 5, idea_score)
+    sheet.update_cell(row_index, 6, innovation)
+    sheet.update_cell(row_index, 7, feasibility)
+    sheet.update_cell(row_index, 8, impact)
+    sheet.update_cell(row_index, 9, total)
+    sheet.update_cell(row_index, 10, evaluator_name)
+    sheet.update_cell(row_index, 11, eval_time)
 
 def show_login_box():
     st.subheader("🔐 Faculty/Admin Login")
     with st.form("admin_login_form"):
         username = st.text_input("Username")
         password = st.text_input("Password", type="password")
+        evaluator_name = st.text_input("Evaluator Name (for logging)")
         login_btn = st.form_submit_button("Login")
 
         if login_btn:
             if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
-                st.session_state.is_admin = True
-                st.success("✅ Login successful")
-                st.rerun()
+                if evaluator_name.strip() == "":
+                    st.error("❌ Please enter Evaluator Name")
+                else:
+                    st.session_state.is_admin = True
+                    st.session_state.evaluator_name = evaluator_name.strip()
+                    st.success("✅ Login successful")
+                    st.rerun()
             else:
                 st.error("❌ Invalid username or password")
 
 def show_logout_button():
     if st.session_state.is_admin:
-        st.sidebar.success("Admin Logged In")
+        st.sidebar.success(f"Admin Logged In\n\nEvaluator: {st.session_state.evaluator_name}")
         if st.sidebar.button("Logout"):
             st.session_state.is_admin = False
+            st.session_state.evaluator_name = ""
             st.rerun()
 
 # ---------------------------
 # SIDEBAR
 # ---------------------------
 if st.session_state.is_admin:
-    menu_options = ["Home", "Submit Idea", "Bulk Upload", "View Submissions", "Evaluate", "Leaderboard", "Admin Login"]
+    menu_options = [
+        "Home",
+        "Submit Idea",
+        "Bulk Upload",
+        "View Submissions",
+        "Evaluate",
+        "Leaderboard",
+        "Evaluation Report",
+        "Admin Login"
+    ]
 else:
-    menu_options = ["Home", "Submit Idea", "View Submissions", "Leaderboard", "Admin Login"]
+    menu_options = [
+        "Home",
+        "Submit Idea",
+        "View Submissions",
+        "Leaderboard",
+        "Admin Login"
+    ]
 
 menu = st.sidebar.radio("Navigation", menu_options)
 show_logout_button()
@@ -187,9 +230,9 @@ if menu == "Home":
 
     st.markdown("<br>", unsafe_allow_html=True)
     if st.session_state.is_admin:
-        st.info("Admin access enabled: Bulk Upload and Evaluate sections are visible.")
+        st.info(f"Admin access enabled. Evaluator logged in: {st.session_state.evaluator_name}")
     else:
-        st.info("Student/Public view enabled: submission and leaderboard are available.")
+        st.info("Student/Public view enabled: submission, viewing, and leaderboard are available.")
 
 # ---------------------------
 # SUBMIT IDEA
@@ -210,7 +253,7 @@ elif menu == "Submit Idea":
             elif not idea.strip():
                 st.warning("Please enter Idea Description.")
             else:
-                add_data([team, members, domain, idea, "", "", "", "", ""])
+                add_data([team, members, domain, idea, "", "", "", "", "", "", ""])
                 st.success("✅ Idea submitted successfully!")
 
 # ---------------------------
@@ -231,7 +274,9 @@ elif menu == "Bulk Upload":
             "Innovation": [],
             "Feasibility": [],
             "Impact": [],
-            "Total": []
+            "Total": [],
+            "Evaluated By": [],
+            "Evaluation Time": []
         })
 
         st.download_button(
@@ -260,15 +305,17 @@ elif menu == "Bulk Upload":
 
                     for _, row in df.iterrows():
                         sheet.append_row([
-                            row["Team Name"],
-                            row["Members"],
-                            row["Domain"],
-                            row["Idea"],
+                            row.get("Team Name", ""),
+                            row.get("Members", ""),
+                            row.get("Domain", ""),
+                            row.get("Idea", ""),
                             row.get("Idea Score", ""),
                             row.get("Innovation", ""),
                             row.get("Feasibility", ""),
                             row.get("Impact", ""),
-                            row.get("Total", "")
+                            row.get("Total", ""),
+                            row.get("Evaluated By", ""),
+                            row.get("Evaluation Time", "")
                         ])
                         count += 1
 
@@ -311,14 +358,20 @@ elif menu == "Evaluate":
             team = st.selectbox("Select Team", df["Team Name"])
             idx = df[df["Team Name"] == team].index[0]
 
+            st.markdown(f"**Evaluator:** {st.session_state.evaluator_name}")
             st.markdown("### Scoring Parameters")
+
             idea_score = st.slider("Idea Score", 0, 10)
             innovation = st.slider("Innovation", 0, 10)
             feasibility = st.slider("Feasibility", 0, 10)
             impact = st.slider("Impact", 0, 10)
 
             if st.button("Save Evaluation"):
-                update_scores(idx + 2, [idea_score, innovation, feasibility, impact])
+                update_scores(
+                    idx + 2,
+                    [idea_score, innovation, feasibility, impact],
+                    st.session_state.evaluator_name
+                )
                 st.success("✅ Evaluation saved successfully!")
 
 # ---------------------------
@@ -348,11 +401,40 @@ elif menu == "Leaderboard":
                 st.write(f"{medals[i]} {row['Team Name']} — {int(row['Total'])}")
 
 # ---------------------------
+# EVALUATION REPORT (ADMIN ONLY)
+# ---------------------------
+elif menu == "Evaluation Report":
+    if not st.session_state.is_admin:
+        st.error("❌ Access denied. Admin login required.")
+    else:
+        st.title("📄 Evaluation Report")
+
+        df = load_data()
+
+        if df.empty:
+            st.warning("No data available.")
+        else:
+            st.dataframe(df, use_container_width=True)
+
+            report_df = df.copy()
+            csv_data = report_df.to_csv(index=False).encode("utf-8")
+
+            st.download_button(
+                label="⬇ Download Evaluation Report (CSV)",
+                data=csv_data,
+                file_name="hackathon_evaluation_report.csv",
+                mime="text/csv"
+            )
+
+# ---------------------------
 # ADMIN LOGIN
 # ---------------------------
 elif menu == "Admin Login":
     if st.session_state.is_admin:
         st.success("✅ You are already logged in as Admin.")
-        st.markdown("<p class='small-note'>Bulk Upload and Evaluate sections are enabled in the sidebar.</p>", unsafe_allow_html=True)
+        st.markdown(
+            f"<p class='small-note'>Evaluator logged in: <b>{st.session_state.evaluator_name}</b></p>",
+            unsafe_allow_html=True
+        )
     else:
         show_login_box()
