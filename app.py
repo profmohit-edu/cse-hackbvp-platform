@@ -26,6 +26,12 @@ WEIGHTS = {
 }
 
 # ================= SESSION =================
+if "role" not in st.session_state:
+    st.session_state.role = "Guest"
+
+if "judge_name" not in st.session_state:
+    st.session_state.judge_name = ""
+
 if "event_end" not in st.session_state:
     st.session_state.event_end = datetime.now() + timedelta(hours=2)
 
@@ -73,7 +79,7 @@ def get_leaderboard():
     ev[total_col] = pd.to_numeric(ev[total_col], errors='coerce')
 
     agg = ev.groupby("Team Name")[total_col].mean().reset_index()
-    agg = agg.rename(columns={total_col:"Final Score"})
+    agg = agg.rename(columns={total_col: "Final Score"})
 
     df = sub.merge(agg, on="Team Name", how="left")
     return df.sort_values(by="Final Score", ascending=False)
@@ -81,12 +87,8 @@ def get_leaderboard():
 # ================= DARK MODE =================
 dark_mode = st.toggle("🌙 Dark Mode", value=False)
 
-if dark_mode:
-    bg = "#0f172a"
-    text = "#f1f5f9"
-else:
-    bg = "#ffffff"
-    text = "#1e293b"
+bg = "#0f172a" if dark_mode else "#ffffff"
+text = "#f1f5f9" if dark_mode else "#1e293b"
 
 # ================= STYLE =================
 st.markdown(f"""
@@ -95,10 +97,16 @@ body {{ background:{bg}; color:{text}; }}
 
 .header {{
     padding:20px;
-    border-radius:15px;
-    box-shadow:0 5px 20px rgba(0,0,0,0.15);
+    border-radius:18px;
+    box-shadow:0 6px 20px rgba(0,0,0,0.15);
     text-align:center;
     margin-bottom:20px;
+    animation: glow 3s infinite alternate;
+}}
+
+@keyframes glow {{
+    from {{ box-shadow:0 0 10px rgba(59,130,246,0.3); }}
+    to {{ box-shadow:0 0 25px rgba(59,130,246,0.7); }}
 }}
 
 .banner {{
@@ -135,15 +143,44 @@ Bharati Vidyapeeth’s College of Engineering, Delhi
 </div>
 """, unsafe_allow_html=True)
 
+# ================= LOGIN =================
+with st.expander("🔐 Login Panel"):
+    role_select = st.selectbox("Login As", ["Guest", "Admin", "Judge"])
+
+    if role_select == "Admin":
+        user = st.text_input("Username")
+        pwd = st.text_input("Password", type="password")
+        if st.button("Login Admin"):
+            if user == ADMIN_USER and pwd == ADMIN_PASS:
+                st.session_state.role = "Admin"
+                st.success("Admin logged in")
+            else:
+                st.error("Invalid credentials")
+
+    elif role_select == "Judge":
+        name = st.text_input("Judge Name")
+        if st.button("Login Judge"):
+            if name.strip():
+                st.session_state.role = "Judge"
+                st.session_state.judge_name = name.strip()
+                st.success(f"Judge {name} logged in")
+
+st.caption(f"👤 Logged in as: {st.session_state.role}")
+
 # ================= NAVIGATION =================
-menu = st.radio(
-    "Navigation",
-    ["🏠 Dashboard","📥 Submit","🧑‍⚖️ Evaluate","🏆 Leaderboard","📄 Certificates"],
-    horizontal=True
-)
+menu_options = ["🏠 Dashboard", "🏆 Leaderboard"]
+
+if st.session_state.role == "Admin":
+    menu_options += ["📥 Submit", "📄 Certificates"]
+
+if st.session_state.role == "Judge":
+    menu_options += ["🧑‍⚖️ Evaluate"]
+
+menu = st.radio("Navigation", menu_options, horizontal=True)
 
 # ================= TIMER =================
 remaining = EVENT_END - datetime.now()
+
 if remaining.total_seconds() > 0:
     mins, secs = divmod(int(remaining.total_seconds()), 60)
     st.markdown(f"<h3 style='text-align:center;'>⏱️ {mins}m {secs}s left</h3>", unsafe_allow_html=True)
@@ -153,57 +190,69 @@ else:
 # ================= DASHBOARD =================
 if menu == "🏠 Dashboard":
     st.markdown('<div class="banner">🏁 Hackathon Live Dashboard</div>', unsafe_allow_html=True)
+    st.info("📢 Evaluation in progress. Judges please submit scores.")
 
     sub = load_sub()
     ev = load_eval()
 
-    st.info("📢 Evaluation in progress. Judges please submit scores.")
-
-    c1,c2,c3 = st.columns(3)
+    c1, c2, c3 = st.columns(3)
     c1.metric("Ideas", len(sub))
     c2.metric("Evaluations", len(ev))
     c3.metric("Teams", ev["Team Name"].nunique() if not ev.empty else 0)
 
 # ================= SUBMIT =================
 if menu == "📥 Submit":
+    if st.session_state.role != "Admin":
+        st.warning("Only admin allowed")
+        st.stop()
+
     t = st.text_input("Team Name")
     m = st.text_area("Members")
     d = st.text_input("Domain")
     i = st.text_area("Idea")
 
     if st.button("Submit"):
-        sub_sheet.append_row([t,m,d,i])
-        st.success("Submitted successfully")
+        sub_sheet.append_row([t, m, d, i])
+        st.success("Submitted")
 
 # ================= EVALUATE =================
 if menu == "🧑‍⚖️ Evaluate":
+    if st.session_state.role != "Judge":
+        st.warning("Only judges allowed")
+        st.stop()
+
     df = load_sub()
+    if df.empty:
+        st.warning("No submissions yet")
+        st.stop()
+
     team = st.selectbox("Team", df["Team Name"])
 
-    idea = st.slider("Idea",0,10)
-    innovation = st.slider("Innovation",0,10)
-    tech = st.slider("Technical",0,10)
-    pres = st.slider("Presentation",0,10)
-    impact = st.slider("Impact",0,10)
+    idea = st.slider("Idea", 0, 10)
+    innovation = st.slider("Innovation", 0, 10)
+    tech = st.slider("Technical", 0, 10)
+    pres = st.slider("Presentation", 0, 10)
+    impact = st.slider("Impact", 0, 10)
 
     total = round(
         idea*WEIGHTS["Idea"] +
         innovation*WEIGHTS["Innovation"] +
         tech*WEIGHTS["Technical"] +
         pres*WEIGHTS["Presentation"] +
-        impact*WEIGHTS["Impact"],2
+        impact*WEIGHTS["Impact"], 2
     )
 
     st.write("Total Score:", total)
 
     if st.button("Submit Score"):
         eval_sheet.append_row([
-            team,"Judge",
-            idea,innovation,tech,pres,impact,
+            team,
+            st.session_state.judge_name,
+            idea, innovation, tech, pres, impact,
             total,
             datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         ])
-        st.success("Score saved")
+        st.success("Score submitted")
 
 # ================= LEADERBOARD =================
 if menu == "🏆 Leaderboard":
@@ -214,7 +263,7 @@ if menu == "🏆 Leaderboard":
     else:
         top3 = df.head(3)
         cols = st.columns(3)
-        colors = ["gold","silver","bronze"]
+        colors = ["gold", "silver", "bronze"]
 
         for i in range(len(top3)):
             with cols[i]:
@@ -227,6 +276,9 @@ if menu == "🏆 Leaderboard":
                 """, unsafe_allow_html=True)
 
         st.dataframe(df, use_container_width=True)
+
+        st.markdown("### 👨‍⚖️ Judge Breakdown")
+        st.dataframe(load_eval())
 
         if remaining.total_seconds() <= 0 and not st.session_state.winner_shown:
             st.session_state.winner_shown = True
