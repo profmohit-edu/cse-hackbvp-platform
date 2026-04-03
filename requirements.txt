@@ -5,3 +5,5 @@ google-auth
 reportlab
 openpyxl
 streamlit-autorefresh
+oauth2client
+pytz
