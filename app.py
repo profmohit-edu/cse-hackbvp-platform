@@ -14,6 +14,7 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet
 from streamlit_autorefresh import st_autorefresh
+import pytz
 
 # ------------ CONFIG ------------
 st.set_page_config(page_title="CSE Hackathon Platform", layout="wide")
@@ -34,6 +35,8 @@ WEIGHTS = {
     "Presentation": 0.10,
     "Impact": 0.10
 }
+
+IST = pytz.timezone("Asia/Kolkata")
 
 # ------------ SESSION STATE ------------
 if "role" not in st.session_state:
@@ -71,14 +74,26 @@ def connect():
 wb = connect()
 
 def ensure_sheet(name, headers):
+    # Try to open existing worksheet
     try:
         ws = wb.worksheet(name)
     except Exception:
-        ws = wb.add_worksheet(title=name, rows=1000, cols=20)
-    values = ws.get_all_values()
+        # If not found, try to create it
+        try:
+            ws = wb.add_worksheet(title=name, rows=1000, cols=20)
+        except Exception:
+            # Fallback: use first worksheet to avoid crashing
+            ws = wb.get_worksheet(0)
+
+    # Ensure headers
+    try:
+        values = ws.get_all_values()
+    except Exception:
+        values = []
     if not values or values[0] != headers:
         ws.clear()
         ws.append_row(headers)
+
     return ws
 
 sub_sheet = ensure_sheet("Submissions", SUBMISSION_HEADERS)
@@ -89,7 +104,6 @@ def load_sub():
         df = pd.DataFrame(sub_sheet.get_all_records())
         if df.empty:
             df = pd.DataFrame(columns=SUBMISSION_HEADERS)
-        # ensure all expected columns exist
         for c in SUBMISSION_HEADERS:
             if c not in df.columns:
                 df[c] = ""
@@ -274,6 +288,7 @@ if choice == "Evaluate":
                 st.info(f"Total Score: {total}")
 
                 if st.button("Submit Score"):
+                    now_ist = datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S")
                     eval_sheet.append_row([
                         team,
                         st.session_state.judge_name,
@@ -283,7 +298,7 @@ if choice == "Evaluate":
                         pres,
                         impact,
                         total,
-                        str(datetime.now())
+                        now_ist
                     ])
                     st.success("✅ Evaluation submitted")
 
