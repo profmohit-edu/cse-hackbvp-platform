@@ -2,11 +2,12 @@ import streamlit as st
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
-from datetime import datetime
+from datetime import datetime, timedelta
 from io import BytesIO
 from reportlab.platypus import SimpleDocTemplate, Paragraph
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet
+from streamlit_autorefresh import st_autorefresh
 
 # ================= CONFIG =================
 st.set_page_config(page_title="CSE Hackathon Platform", layout="wide")
@@ -15,6 +16,8 @@ SHEET_URL = "https://docs.google.com/spreadsheets/d/1lLjkJ2IFxZTbKhJV_KCoTZqD1fK
 
 ADMIN_USER = "admin"
 ADMIN_PASS = "admin123"
+
+EVENT_END = datetime.now() + timedelta(hours=2)
 
 WEIGHTS = {
     "Idea": 0.20,
@@ -29,8 +32,12 @@ if "role" not in st.session_state:
     st.session_state.role = "Guest"
 if "judge_name" not in st.session_state:
     st.session_state.judge_name = ""
+if "prev_top" not in st.session_state:
+    st.session_state.prev_top = None
+if "winner_shown" not in st.session_state:
+    st.session_state.winner_shown = False
 
-# ================= CONNECT =================
+# ================= GOOGLE SHEETS =================
 @st.cache_resource
 def connect():
     creds = Credentials.from_service_account_info(
@@ -44,11 +51,11 @@ wb = connect()
 sub_sheet = wb.worksheet("Submissions")
 eval_sheet = wb.worksheet("Evaluations")
 
-# ================= SAFE LOAD =================
-def safe_df(df):
-    if df is None or len(df) == 0:
+# ================= HELPERS =================
+def safe_df(data):
+    if not data:
         return pd.DataFrame()
-    df = pd.DataFrame(df)
+    df = pd.DataFrame(data)
     df.columns = df.columns.str.strip()
     return df
 
@@ -58,14 +65,39 @@ def load_sub():
 def load_eval():
     return safe_df(eval_sheet.get_all_records())
 
+# ================= FULLSCREEN CSS =================
+st.markdown("""
+<style>
+[data-testid="stSidebar"] {display:none;}
+.card {padding:20px;border-radius:15px;text-align:center;font-size:22px;font-weight:bold;margin:10px;}
+.gold {background:#FFD700; animation: pulse 1.5s infinite;}
+.silver {background:#C0C0C0;}
+.bronze {background:#CD7F32;}
+@keyframes pulse {0%{opacity:1;}50%{opacity:0.6;}100%{opacity:1;}}
+</style>
+""", unsafe_allow_html=True)
+
 # ================= HEADER =================
 st.markdown("""
-<h1 style='text-align:center;'>🚀 CSE Hackathon Platform</h1>
-<p style='text-align:center;'>
-Developed by <b>Mr. Mohit Tiwari</b><br>
-Assistant Professor, CSE Department<br>
-Bharati Vidyapeeth’s College of Engineering, Delhi
-</p>
+<div style='text-align:center; line-height:1.6; margin-bottom:10px;'>
+    <h1 style='margin-bottom:5px;'>🚀 CSE Hackathon Platform</h1>
+
+    <h3 style='margin:0; color:#333;'>
+        Developed by <b>Mr. Mohit Tiwari</b>
+    </h3>
+
+    <p style='margin:0; font-size:16px;'>
+        Assistant Professor, Department of Computer Science and Engineering
+    </p>
+
+    <p style='margin:0; font-size:15px;'>
+        Cybersecurity & AI Research
+    </p>
+
+    <p style='margin:0; font-size:15px;'>
+        Bharati Vidyapeeth’s College of Engineering, Delhi
+    </p>
+</div>
 <hr>
 """, unsafe_allow_html=True)
 
@@ -79,7 +111,6 @@ if role == "Admin":
     if st.sidebar.button("Login"):
         if u == ADMIN_USER and p == ADMIN_PASS:
             st.session_state.role = "Admin"
-            st.success("Admin logged in")
 
 elif role == "Judge":
     name = st.sidebar.text_input("Judge Name")
@@ -87,169 +118,90 @@ elif role == "Judge":
         if name:
             st.session_state.role = "Judge"
             st.session_state.judge_name = name.strip().lower()
-            st.success("Judge logged in")
 
-# ================= MENU =================
-if st.session_state.role == "Admin":
-    menu = st.sidebar.radio("Menu", [
-        "Dashboard","Submit","Bulk Upload","Evaluate Panel",
-        "Leaderboard","Certificates","Reports"
-    ])
-elif st.session_state.role == "Judge":
-    menu = st.sidebar.radio("Menu", ["Evaluate Panel"])
-else:
-    menu = st.sidebar.radio("Menu", ["Submit","Leaderboard"])
+menu = st.sidebar.radio("Menu", [
+    "Dashboard","Submit","Evaluate Panel",
+    "Leaderboard","Live Leaderboard","Certificates"
+])
 
-# ================= DASHBOARD =================
-if menu == "Dashboard":
-    st.subheader("📊 Dashboard")
-
-    sub = load_sub()
-    ev = load_eval()
-
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Total Ideas", len(sub))
-
-    if ev.empty:
-        c2.metric("Total Evaluations", 0)
-        c3.metric("Evaluated Teams", 0)
-    else:
-        c2.metric("Total Evaluations", len(ev))
-        if "Team Name" in ev.columns:
-            c3.metric("Evaluated Teams", ev["Team Name"].nunique())
-        else:
-            c3.metric("Evaluated Teams", 0)
-
-# ================= SUBMIT =================
-if menu == "Submit":
-    st.subheader("Submit Idea")
-
-    t = st.text_input("Team Name")
-    m = st.text_area("Members")
-    d = st.text_input("Domain")
-    i = st.text_area("Idea")
-
-    if st.button("Submit"):
-        sub_sheet.append_row([t, m, d, i])
-        st.success("Submitted")
-
-# ================= BULK UPLOAD =================
-if menu == "Bulk Upload":
-    st.subheader("Bulk Upload")
-
-    df_template = pd.DataFrame(columns=["Team Name","Members","Domain","Idea"])
-    buffer = BytesIO()
-    df_template.to_excel(buffer, index=False)
-    buffer.seek(0)
-
-    st.download_button("Download Template", buffer, "template.xlsx")
-
-    file = st.file_uploader("Upload Excel", type=["xlsx"])
-    if file:
-        df = pd.read_excel(file)
-        st.dataframe(df)
-
-        if st.button("Upload"):
-            for _, r in df.iterrows():
-                sub_sheet.append_row(list(r))
-            st.success("Uploaded")
-
-# ================= EVALUATE =================
-if menu == "Evaluate Panel":
-    st.subheader("Judge Panel")
-
-    df = load_sub()
-    ev = load_eval()
-
-    if df.empty:
-        st.warning("No submissions yet")
-        st.stop()
-
-    team = st.selectbox("Team", df["Team Name"])
-
-    # LOCK CHECK
-    judge_col = None
-    for col in ev.columns:
-        if col.lower() in ["judge", "evaluator"]:
-            judge_col = col
-
-    if judge_col:
-        if ((ev["Team Name"] == team) &
-            (ev[judge_col] == st.session_state.judge_name)).any():
-            st.warning("Already evaluated by you")
-            st.stop()
-
-    idea = st.slider("Idea",0,10,5)
-    innovation = st.slider("Innovation",0,10,5)
-    tech = st.slider("Technical",0,10,5)
-    pres = st.slider("Presentation",0,10,5)
-    impact = st.slider("Impact",0,10,5)
-
-    total = round(
-        idea*WEIGHTS["Idea"] +
-        innovation*WEIGHTS["Innovation"] +
-        tech*WEIGHTS["Technical"] +
-        pres*WEIGHTS["Presentation"] +
-        impact*WEIGHTS["Impact"], 2
-    )
-
-    st.info(f"Score: {total}")
-
-    if st.button("Submit Score"):
-        eval_sheet.append_row([
-            team,
-            st.session_state.judge_name,
-            idea, innovation, tech, pres, impact,
-            total,
-            datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        ])
-        st.success("Saved")
-
-# ================= LEADERBOARD =================
-if menu == "Leaderboard":
-    st.subheader("Leaderboard")
-
+# ================= LEADERBOARD FUNCTION =================
+def get_leaderboard():
     sub = load_sub()
     ev = load_eval()
 
     if ev.empty:
-        st.warning("No evaluations yet")
-        st.stop()
+        return pd.DataFrame()
 
-    # CLEAN COLUMNS
-    ev.columns = ev.columns.str.strip()
-
-    # FIND TOTAL COLUMN
-    total_col = None
-    for col in ev.columns:
-        if col.lower() in ["total", "score"]:
-            total_col = col
-
-    if not total_col:
-        st.error("Total column missing in Evaluations sheet")
-        st.stop()
-
-    # CONVERT TO NUMERIC
+    total_col = [c for c in ev.columns if c.lower() in ["total","score"]][0]
     ev[total_col] = pd.to_numeric(ev[total_col], errors='coerce')
 
-    # GROUP BY TEAM
     agg = ev.groupby("Team Name")[total_col].mean().reset_index()
+    agg = agg.rename(columns={total_col:"Final Score"})
 
-    # 🔥 RENAME COLUMN SAFELY
-    agg = agg.rename(columns={total_col: "Final Score"})
-
-    # MERGE
     df = sub.merge(agg, on="Team Name", how="left")
+    return df.sort_values(by="Final Score", ascending=False)
 
-    # SORT USING NEW COLUMN
-    if "Final Score" in df.columns:
-        df = df.sort_values(by="Final Score", ascending=False)
+# ================= LIVE LEADERBOARD =================
+if menu == "Live Leaderboard":
 
+    st_autorefresh(interval=4000, key="live")
+
+    # ⏱️ TIMER
+    remaining = EVENT_END - datetime.now()
+    mins, secs = divmod(int(remaining.total_seconds()), 60)
+
+    st.markdown(f"<h2 style='text-align:center;'>⏱️ {mins}m {secs}s left</h2>", unsafe_allow_html=True)
+
+    df = get_leaderboard()
+
+    if df.empty:
+        st.warning("Waiting for scores...")
+        st.stop()
+
+    top_team = df.iloc[0]["Team Name"]
+
+    # 🔊 SOUND ALERT
+    if st.session_state.prev_top != top_team:
+        st.audio("https://www.soundjay.com/buttons/sounds/button-3.mp3")
+        st.session_state.prev_top = top_team
+
+    # 🏆 WINNER POPUP
+    if remaining.total_seconds() <= 0 and not st.session_state.winner_shown:
+        st.session_state.winner_shown = True
+        st.markdown(f"""
+        <h1 style='text-align:center;color:gold;font-size:60px;'>
+        🏆 WINNER: {top_team}
+        </h1>
+        """, unsafe_allow_html=True)
+        st.balloons()
+        st.audio("https://www.soundjay.com/misc/sounds/bell-ringing-05.mp3")
+
+    # 🥇 TOP 3
+    top3 = df.head(3)
+    cols = st.columns(3)
+    colors = ["gold","silver","bronze"]
+
+    for i in range(len(top3)):
+        with cols[i]:
+            st.markdown(f"""
+            <div class='card {colors[i]}'>
+            🏅 Rank {i+1}<br>
+            {top3.iloc[i]["Team Name"]}<br>
+            Score: {round(top3.iloc[i]["Final Score"],2)}
+            </div>
+            """, unsafe_allow_html=True)
+
+    st.markdown("### 📊 Full Rankings")
     st.dataframe(df, use_container_width=True)
+
+    # 👨‍⚖️ JUDGE BREAKDOWN
+    st.markdown("### 👨‍⚖️ Judge-wise Scores")
+    ev = load_eval()
+    if not ev.empty:
+        st.dataframe(ev)
+
 # ================= CERTIFICATE =================
 if menu == "Certificates":
-    st.subheader("Certificates")
-
     sub = load_sub()
     team = st.selectbox("Team", sub["Team Name"])
 
@@ -260,17 +212,9 @@ if menu == "Certificates":
 
         story = []
         story.append(Paragraph("Certificate of Achievement", styles["Title"]))
-        story.append(Paragraph(f"This certifies that <b>{team}</b>", styles["Normal"]))
-        story.append(Paragraph("has successfully participated in the Hackathon.", styles["Normal"]))
+        story.append(Paragraph(f"Awarded to {team}", styles["Normal"]))
 
         doc.build(story)
         buffer.seek(0)
 
-        st.download_button("Download", buffer, f"{team}_certificate.pdf")
-
-# ================= REPORT =================
-if menu == "Reports":
-    st.subheader("Reports")
-
-    ev = load_eval()
-    st.download_button("Download CSV", ev.to_csv(index=False), "report.csv")
+        st.download_button("Download", buffer, f"{team}.pdf")
