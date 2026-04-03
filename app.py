@@ -43,7 +43,7 @@ st.markdown("""
 <div class='title'>🚀 CSE Hackathon Platform</div>
 <div class='subtitle'>
 Developed by <b>Mr. Mohit Tiwari</b><br>
-Assistant Professor | Cybersecurity & AI<br>
+Assistant Professor | Department of Computer Science and Engineering<br>
 BVCOE Delhi
 </div>
 <hr>
