@@ -35,12 +35,12 @@ if "judge_name" not in st.session_state:
 # ================= GOOGLE SHEETS =================
 @st.cache_resource
 def connect():
-    creds = Credentials.from_service_account_file(
-        "credentials.json",
+    creds = Credentials.from_service_account_info(
+        st.secrets["gcp_service_account"],
         scopes=["https://www.googleapis.com/auth/spreadsheets"]
     )
     client = gspread.authorize(creds)
-    wb = client.open_by_url(SHEET_URL)
+    return client.open_by_url(SHEET_URL)
     return wb
 
 wb = connect()
