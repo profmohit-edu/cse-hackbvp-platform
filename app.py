@@ -115,7 +115,7 @@ text-align:center;
 margin-bottom:20px;
 ">
 
-<img src="https://upload.wikimedia.org/wikipedia/en/0/0c/Bharati_Vidyapeeth_Deemed_University_logo.png" width="60">
+<img src="https://upload.wikimedia.org/wikipedia/commons/7/76/Bvcoe_main.JPG" width="60">
 
 <h2>🚀 CSE Hackathon Platform</h2>
 
