@@ -7,3 +7,4 @@ openpyxl
 streamlit-autorefresh
 oauth2client
 pytz
+matplotlib
