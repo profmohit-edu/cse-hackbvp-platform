@@ -9,6 +9,19 @@ from google.oauth2.service_account import Credentials
 st.set_page_config(page_title="CSE Hackathon Platform", layout="wide")
 
 # ---------------------------
+# HEADER / BRANDING
+# ---------------------------
+st.markdown("""
+<h2 style='text-align: center;'>🚀 CSE Hackathon Platform</h2>
+<p style='text-align: center; font-size:16px;'>
+Developed by <b>Mr. Mohit Tiwari</b><br>
+Assistant Professor | Cybersecurity & AI<br>
+BVCOE Delhi
+</p>
+<hr>
+""", unsafe_allow_html=True)
+
+# ---------------------------
 # GOOGLE SHEETS CONNECTION
 # ---------------------------
 scope = ["https://www.googleapis.com/auth/spreadsheets"]
@@ -20,7 +33,7 @@ creds = Credentials.from_service_account_info(
 
 client = gspread.authorize(creds)
 
-# 🔥 FINAL FIX: USE FULL URL (MOST RELIABLE)
+# 🔥 YOUR SHEET URL (ALREADY FIXED)
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1lLjkJ2IFxZTbKhJV_KCoTZqD1fKrDN5OT5e1qhe7iCE/edit#gid=0"
 
 sheet = client.open_by_url(SHEET_URL).worksheet("Sheet1")
@@ -39,7 +52,7 @@ def load_data():
 def add_data(row):
     try:
         sheet.append_row(row)
-        st.success("✅ Data written to Google Sheet")
+        st.success("✅ Idea submitted successfully!")
     except Exception as e:
         st.error(f"Write Error: {e}")
 
@@ -51,7 +64,7 @@ def update_scores(row_index, scores):
         total = sum(scores)
         sheet.update_cell(row_index, 8, total)
 
-        st.success("✅ Scores saved successfully")
+        st.success("✅ Scores saved successfully!")
     except Exception as e:
         st.error(f"Update Error: {e}")
 
@@ -60,15 +73,15 @@ def update_scores(row_index, scores):
 # ---------------------------
 menu = st.sidebar.radio(
     "Navigation",
-    ["Home", "Submit Idea", "View Submissions", "Evaluate"]
+    ["Home", "Submit Idea", "View Submissions", "Evaluate", "Leaderboard"]
 )
 
 # ---------------------------
 # HOME
 # ---------------------------
 if menu == "Home":
-    st.title("🚀 CSE Hackathon Platform")
-    st.write("Submit ideas, evaluate them, and rank teams.")
+    st.title("Welcome")
+    st.write("Submit ideas, evaluate them, and view rankings.")
 
 # ---------------------------
 # SUBMIT IDEA
@@ -81,7 +94,6 @@ elif menu == "Submit Idea":
 
     if st.session_state.submitted:
         st.success("✅ Idea submitted successfully!")
-
         if st.button("Submit Another"):
             st.session_state.submitted = False
             st.rerun()
@@ -112,7 +124,7 @@ elif menu == "View Submissions":
     df = load_data()
 
     if df.empty:
-        st.warning("No data found")
+        st.warning("No data available")
     else:
         st.dataframe(df, use_container_width=True)
 
@@ -128,7 +140,6 @@ elif menu == "Evaluate":
         st.warning("No submissions yet.")
     else:
         team = st.selectbox("Select Team", df["Team Name"])
-
         idx = df[df["Team Name"] == team].index[0]
 
         st.write("### Score (0–10)")
@@ -141,3 +152,26 @@ elif menu == "Evaluate":
         if st.button("Save Evaluation"):
             update_scores(idx + 2, [idea_score, innovation, feasibility, impact])
             st.rerun()
+
+# ---------------------------
+# LEADERBOARD
+# ---------------------------
+elif menu == "Leaderboard":
+    st.title("🏆 Leaderboard")
+
+    df = load_data()
+
+    if df.empty:
+        st.warning("No data available")
+    else:
+        df["Total"] = pd.to_numeric(df["Total"], errors="coerce")
+        df = df.sort_values(by="Total", ascending=False)
+
+        st.dataframe(df, use_container_width=True)
+
+        st.subheader("Top Teams")
+
+        top3 = df.head(3)
+
+        for i, row in top3.iterrows():
+            st.write(f"🥇 {row['Team Name']} — {row['Total']} points")
