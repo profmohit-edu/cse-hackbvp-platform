@@ -119,7 +119,7 @@ margin-bottom:20px;
 
 <h2>🚀 CSE Hackathon Platform</h2>
 
-<img src="https://upload.wikimedia.org/wikipedia/commons/3/3c/Bvcoe_main.JPG"
+<img src="https://upload.wikimedia.org/wikipedia/commons/7/76/Bvcoe_main.JPG"
 style="width:100%;max-height:250px;object-fit:cover;border-radius:14px;margin:10px 0;">
 
 <div style="font-size:20px;font-weight:600;">Developed by Mr. Mohit Tiwari</div>
