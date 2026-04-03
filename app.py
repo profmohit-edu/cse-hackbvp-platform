@@ -25,6 +25,7 @@ st.markdown("""
     text-align: center;
     font-size: 16px;
     color: gray;
+    line-height: 1.6;
 }
 .card {
     padding: 20px;
@@ -37,14 +38,15 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ---------------------------
-# HEADER
+# HEADER (UPDATED AS REQUESTED)
 # ---------------------------
 st.markdown("""
 <div class='title'>🚀 CSE Hackathon Platform</div>
 <div class='subtitle'>
 Developed by <b>Mr. Mohit Tiwari</b><br>
-Assistant Professor | Department of Computer Science and Engineering<br>
-BVCOE Delhi
+Assistant Professor, Department of Computer Science and Engineering<br>
+Cybersecurity & AI Research<br>
+Bharati Vidyapeeth’s College of Engineering, Delhi
 </div>
 <hr>
 """, unsafe_allow_html=True)
@@ -135,7 +137,6 @@ elif menu == "Submit Idea":
 elif menu == "Bulk Upload":
     st.title("📥 Bulk Upload Ideas")
 
-    # TEMPLATE DOWNLOAD
     template_df = pd.DataFrame({
         "Team Name": [],
         "Members": [],
@@ -166,10 +167,12 @@ elif menu == "Bulk Upload":
             else:
                 df = pd.read_excel(uploaded_file)
 
-            st.write("Preview:")
-            st.dataframe(df)
+            st.subheader("📊 Preview of Uploaded Data")
+            st.dataframe(df, use_container_width=True)
 
-            if st.button("Upload to System"):
+            if st.button("🚀 Upload to System"):
+                count = 0
+
                 for _, row in df.iterrows():
                     sheet.append_row([
                         row["Team Name"],
@@ -182,11 +185,16 @@ elif menu == "Bulk Upload":
                         row.get("Impact", ""),
                         row.get("Total", "")
                     ])
+                    count += 1
 
-                st.success("✅ Bulk upload successful!")
+                st.success(f"✅ {count} records uploaded successfully!")
+
+                st.subheader("📌 Latest Data in System")
+                new_df = load_data()
+                st.dataframe(new_df.tail(10), use_container_width=True)
 
         except Exception as e:
-            st.error(f"Error: {e}")
+            st.error(f"❌ Error: {e}")
 
 # ---------------------------
 # VIEW SUBMISSIONS
