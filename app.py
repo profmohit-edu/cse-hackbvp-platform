@@ -86,32 +86,45 @@ eval_sheet = ensure_sheet("Evaluations", EVALUATION_HEADERS)
 
 def load_sub():
     try:
-        return pd.DataFrame(sub_sheet.get_all_records())
+        df = pd.DataFrame(sub_sheet.get_all_records())
+        if df.empty:
+            df = pd.DataFrame(columns=SUBMISSION_HEADERS)
+        # ensure all expected columns exist
+        for c in SUBMISSION_HEADERS:
+            if c not in df.columns:
+                df[c] = ""
+        return df[SUBMISSION_HEADERS]
     except Exception:
         sub_sheet.clear()
         sub_sheet.append_row(SUBMISSION_HEADERS)
-        return pd.DataFrame()
+        return pd.DataFrame(columns=SUBMISSION_HEADERS)
 
 def load_eval():
     try:
-        return pd.DataFrame(eval_sheet.get_all_records())
+        df = pd.DataFrame(eval_sheet.get_all_records())
+        if df.empty:
+            df = pd.DataFrame(columns=EVALUATION_HEADERS)
+        for c in EVALUATION_HEADERS:
+            if c not in df.columns:
+                df[c] = ""
+        return df[EVALUATION_HEADERS]
     except Exception:
         eval_sheet.clear()
         eval_sheet.append_row(EVALUATION_HEADERS)
-        return pd.DataFrame()
+        return pd.DataFrame(columns=EVALUATION_HEADERS)
 
 def get_leaderboard():
     sub = load_sub()
     ev = load_eval()
     if ev.empty:
-        return pd.DataFrame()
+        return pd.DataFrame(columns=SUBMISSION_HEADERS + ["Final Score"])
     ev["Total"] = pd.to_numeric(ev["Total"], errors="coerce")
     agg = ev.groupby("Team Name")["Total"].mean().reset_index()
     agg.rename(columns={"Total": "Final Score"}, inplace=True)
     df = sub.merge(agg, on="Team Name", how="left")
-    if "Final Score" in df.columns:
-        df["Final Score"] = df["Final Score"].round(2)
-        df = df.sort_values(by="Final Score", ascending=False)
+    df["Final Score"] = pd.to_numeric(df["Final Score"], errors="coerce")
+    df["Final Score"] = df["Final Score"].round(2)
+    df = df.sort_values(by="Final Score", ascending=False, na_position="last")
     return df
 
 # ------------ HEADER UI ------------
@@ -207,7 +220,12 @@ if choice == "Submit":
             if not t_clean:
                 st.error("Team name is required.")
             else:
-                existing = load_sub()["Team Name"].tolist()
+                sub_df = load_sub()
+                if sub_df.empty or "Team Name" not in sub_df.columns:
+                    existing = []
+                else:
+                    existing = sub_df["Team Name"].astype(str).tolist()
+
                 if t_clean in existing:
                     st.error("Team name already exists.")
                 else:
@@ -273,11 +291,12 @@ if choice == "Evaluate":
 if choice == "Leaderboard":
     df = get_leaderboard()
     if not df.empty:
-        # Show only key columns if present
         display_cols = [c for c in ["Team Name", "Domain", "Final Score"] if c in df.columns]
-        st.dataframe(df[display_cols].style.background_gradient(
-            subset=["Final Score"], cmap="Greens"
-        ))
+        st.dataframe(
+            df[display_cols].style.background_gradient(
+                subset=["Final Score"], cmap="Greens"
+            )
+        )
         top = df.iloc[0]["Team Name"]
         st.markdown(f"🏆 **Current Leader:** {top}")
         if st.session_state.prev_top_team != top:
