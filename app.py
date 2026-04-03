@@ -1,6 +1,7 @@
 # =========================================
 # 🚀 CSE Hackathon Platform (SQLite-backed)
 # Developed by Mr. Mohit Tiwari
+# Assistant Professor, CSE Department
 # Bharati Vidyapeeth’s College of Engineering, Delhi
 # =========================================
 
@@ -200,9 +201,12 @@ box-shadow:0 8px 25px rgba(0,0,0,0.15);
 text-align:center;margin-bottom:20px;">
 <img src="https://upload.wikimedia.org/wikipedia/commons/7/76/Bvcoe_main.JPG" width="60">
 <h2>🚀 CSE Hackathon Platform</h2>
+<div style="margin-top:4px;font-size:14px;">
+End-to-end platform for CSE hackathon registrations, judging, live leaderboard, and certificates.
+</div>
 <img src="https://upload.wikimedia.org/wikipedia/commons/7/76/Bvcoe_main.JPG"
-style="width:100%;max-height:250px;object-fit:cover;border-radius:14px;margin:10px 0;">
-<div style="font-size:20px;font-weight:600;">Developed by Mr. Mohit Tiwari</div>
+style="width:100%;max-height:250px;object-fit:cover;border-radius:14px;margin:10px 10px 0 10px;">
+<div style="font-size:20px;font-weight:600;margin-top:10px;">Developed by Mr. Mohit Tiwari</div>
 <div>Assistant Professor, CSE Department</div>
 <div>Cybersecurity & AI Research</div>
 <div>Bharati Vidyapeeth’s College of Engineering, Delhi</div>
@@ -243,7 +247,7 @@ st.write("Logged in as:", st.session_state.role)
 # ------------ MENU ------------
 menu = ["Dashboard", "Leaderboard"]
 if st.session_state.role == "Admin":
-    menu += ["Submit", "Bulk Upload", "Certificates", "Control", "Export"]
+    menu += ["Team Submission", "Bulk Team Import", "Certificates", "Event Control", "Reports & Export"]
 if st.session_state.role == "Judge":
     menu += ["Evaluate"]
 
@@ -262,22 +266,27 @@ event_active = remaining.total_seconds() > 0
 
 # ------------ DASHBOARD ------------
 if choice == "Dashboard":
-    st.info("Evaluation in progress...")
+    st.info(
+        "Centralised platform for registrations, structured judging, live rankings, "
+        "and instant certificate generation for CSE hackathons."
+    )
     sub = load_submissions_df()
     ev = load_evaluations_df()
-    c1, c2 = st.columns(2)
-    c1.metric("Submissions", len(sub))
-    c2.metric("Evaluations", len(ev))
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Total Teams", len(sub))
+    c2.metric("Total Evaluations", len(ev))
+    unique_judges = ev["judge"].nunique() if not ev.empty else 0
+    c3.metric("Active Judges", unique_judges)
 
-# ------------ SUBMIT ------------
-if choice == "Submit":
+# ------------ TEAM SUBMISSION ------------
+if choice == "Team Submission":
     if not event_active:
         st.error("Submissions are closed. Event time is over.")
     else:
         t = st.text_input("Team Name")
         m = st.text_area("Members")
         d = st.text_input("Domain")
-        i = st.text_area("Idea")
+        i = st.text_area("Idea / Problem Statement")
 
         if st.button("Submit Idea"):
             t_clean = t.strip()
@@ -291,8 +300,8 @@ if choice == "Submit":
                     add_submission(t_clean, m, d, i)
                     st.success("✅ Submission recorded")
 
-# ------------ BULK UPLOAD ------------
-if choice == "Bulk Upload":
+# ------------ BULK TEAM IMPORT ------------
+if choice == "Bulk Team Import":
     st.write("Use this template for bulk upload (do not change header names).")
 
     sample_df = pd.DataFrame(columns=["Team Name", "Members", "Domain", "Idea"])
@@ -315,7 +324,7 @@ if choice == "Bulk Upload":
             bulk_add_submissions(df)
             st.success("✅ Bulk data uploaded")
 
-# ------------ EVALUATE ------------
+# ------------ EVALUATE (JUDGE TABLET MODE READY) ------------
 if choice == "Evaluate":
     if not st.session_state.judge_name:
         st.error("Please log in as a judge first.")
@@ -326,20 +335,28 @@ if choice == "Evaluate":
         if df.empty:
             st.warning("No teams available to evaluate.")
         else:
-            team = st.selectbox("Select Team", df["team_name"])
+            st.write("Select a team and assign scores on each criterion (0–10).")
+            team = st.selectbox("Team", df["team_name"])
+
+            team_row = df[df["team_name"] == team].iloc[0]
+            with st.expander("Team details", expanded=True):
+                st.markdown(f"**Domain:** {team_row['domain']}")
+                st.markdown(f"**Members:** {team_row['members']}")
+                st.markdown(f"**Idea:** {team_row['idea']}")
+
             if has_evaluation(team, st.session_state.judge_name):
                 st.warning("You have already evaluated this team.")
             else:
                 idea = st.slider("Idea", 0, 10)
                 innovation = st.slider("Innovation", 0, 10)
-                tech = st.slider("Technical", 0, 10)
+                tech = st.slider("Technical Implementation", 0, 10)
                 pres = st.slider("Presentation", 0, 10)
-                impact = st.slider("Impact", 0, 10)
+                impact = st.slider("Impact / Usefulness", 0, 10)
 
                 total = compute_score(idea, innovation, tech, pres, impact)
-                st.info(f"Total Score: {total}")
+                st.info(f"Total Score (weighted): {total}")
 
-                if st.button("Submit Score"):
+                if st.button("Submit Score", use_container_width=True):
                     add_evaluation(
                         team,
                         st.session_state.judge_name,
@@ -357,11 +374,13 @@ if choice == "Leaderboard":
     df = get_leaderboard_df()
     if not df.empty:
         display_cols = ["team_name", "domain", "final_score"]
-        st.dataframe(df[display_cols].rename(columns={
-            "team_name": "Team Name",
-            "domain": "Domain",
-            "final_score": "Final Score",
-        }))
+        st.dataframe(
+            df[display_cols].rename(columns={
+                "team_name": "Team Name",
+                "domain": "Domain",
+                "final_score": "Final Score",
+            })
+        )
         top = df.iloc[0]["team_name"]
         st.markdown(f"🏆 **Current Leader:** {top}")
         if st.session_state.prev_top_team != top:
@@ -372,6 +391,7 @@ if choice == "Leaderboard":
 
 # ------------ CERTIFICATES ------------
 if choice == "Certificates":
+    st.write("Certificates can be customised with department logo, signatures, and additional text in future iterations.")
     df = load_submissions_df()
     if df.empty:
         st.info("No teams found.")
@@ -394,16 +414,16 @@ if choice == "Certificates":
                 f"{team}.pdf"
             )
 
-# ------------ ADMIN CONTROL ------------
-if choice == "Control":
-    mins = st.number_input("Set new timer (minutes)", value=120)
+# ------------ EVENT CONTROL ------------
+if choice == "Event Control":
+    mins = st.number_input("Set new evaluation window (minutes from now)", value=120)
     if st.button("Reset Timer"):
         st.session_state.event_end = datetime.now() + timedelta(minutes=mins)
         st.success("Timer reset successfully!")
 
-# ------------ EXPORT (optional) ------------
-if choice == "Export":
-    st.subheader("Export data as Excel files")
+# ------------ REPORTS & EXPORT ------------
+if choice == "Reports & Export":
+    st.subheader("Export data as Excel files for record keeping and analysis")
 
     sub = load_submissions_df()
     ev = load_evaluations_df()
