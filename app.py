@@ -216,23 +216,36 @@ if menu == "Leaderboard":
         st.warning("No evaluations yet")
         st.stop()
 
+    # CLEAN COLUMNS
+    ev.columns = ev.columns.str.strip()
+
+    # FIND TOTAL COLUMN
     total_col = None
     for col in ev.columns:
         if col.lower() in ["total", "score"]:
             total_col = col
 
     if not total_col:
-        st.error("Total column missing")
+        st.error("Total column missing in Evaluations sheet")
         st.stop()
 
+    # CONVERT TO NUMERIC
     ev[total_col] = pd.to_numeric(ev[total_col], errors='coerce')
 
+    # GROUP BY TEAM
     agg = ev.groupby("Team Name")[total_col].mean().reset_index()
+
+    # 🔥 RENAME COLUMN SAFELY
+    agg = agg.rename(columns={total_col: "Final Score"})
+
+    # MERGE
     df = sub.merge(agg, on="Team Name", how="left")
-    df = df.sort_values(by=total_col, ascending=False)
 
-    st.dataframe(df)
+    # SORT USING NEW COLUMN
+    if "Final Score" in df.columns:
+        df = df.sort_values(by="Final Score", ascending=False)
 
+    st.dataframe(df, use_container_width=True)
 # ================= CERTIFICATE =================
 if menu == "Certificates":
     st.subheader("Certificates")
