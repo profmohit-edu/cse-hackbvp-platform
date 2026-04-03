@@ -14,7 +14,7 @@ from reportlab.lib import colors
 st.set_page_config(page_title="CSE Hackathon Platform", layout="wide")
 
 st.markdown("""
-<h1 style='text-align:center'>🚀 CSE Hackathon Platform</h1>
+<h1 style='text-align:center'>BVCOE DELHI CSE DEPT. Hackathon Platform</h1>
 <p style='text-align:center'>
 Developed by <b>Mr. Mohit Tiwari</b><br>
 Assistant Professor, Department of Computer Science and Engineering<br>
