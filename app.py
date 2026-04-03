@@ -175,12 +175,12 @@ if menu == "Evaluate Panel":
 
     if st.button("Submit Score"):
         eval_sheet.append_row([
-            team,
-            st.session_state.judge_name,
-            idea,innovation,tech,pres,impact,
-            total,
-            datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        ])
+    team,
+    st.session_state.judge_name,
+    idea, innovation, tech, pres, impact,
+    total,  # ← THIS CREATES "Total" COLUMN
+    datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+])
         st.success("Saved")
 
 # ================= LEADERBOARD =================
