@@ -74,7 +74,6 @@ wb = connect()
 def ensure_sheet(name, headers):
     # Assumes you already created "Submissions" and "Evaluations" tabs manually
     ws = wb.worksheet(name)
-
     try:
         values = ws.get_all_values()
     except Exception:
@@ -240,6 +239,20 @@ if choice == "Submit":
 
 # ------------ BULK UPLOAD ------------
 if choice == "Bulk Upload":
+    st.write("Use this template for bulk upload (do not change header names).")
+
+    sample_df = pd.DataFrame(columns=SUBMISSION_HEADERS)
+    sample_buf = BytesIO()
+    sample_df.to_excel(sample_buf, index=False)
+    sample_buf.seek(0)
+
+    st.download_button(
+        "⬇️ Download Sample Template",
+        data=sample_buf,
+        file_name="hackathon_bulk_template.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
     file = st.file_uploader("Upload Excel (.xlsx)")
     if file:
         df = pd.read_excel(file)
