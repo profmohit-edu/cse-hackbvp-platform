@@ -190,15 +190,36 @@ if menu == "Leaderboard":
     sub = load_sub()
     ev = load_eval()
 
-    if not ev.empty:
-        ev["Total"] = pd.to_numeric(ev["Total"], errors='coerce')
-        agg = ev.groupby("Team Name")["Total"].mean().reset_index()
+    if ev.empty:
+        st.warning("No evaluations yet")
+        st.stop()
 
-        df = sub.merge(agg,on="Team Name",how="left")
-        df = df.sort_values(by="Total",ascending=False)
+    # 🔹 CLEAN COLUMN NAMES
+    ev.columns = ev.columns.str.strip()
 
-        st.dataframe(df)
+    # 🔹 FIND TOTAL COLUMN SAFELY
+    total_col = None
+    for col in ev.columns:
+        if col.lower() in ["total", "score", "final"]:
+            total_col = col
 
+    if not total_col:
+        st.error("Total score column not found in sheet")
+        st.stop()
+
+    # 🔹 CONVERT TO NUMERIC
+    ev[total_col] = pd.to_numeric(ev[total_col], errors='coerce')
+
+    # 🔹 GROUP + AVERAGE
+    agg = ev.groupby("Team Name")[total_col].mean().reset_index()
+
+    # 🔹 MERGE
+    df = sub.merge(agg, on="Team Name", how="left")
+
+    # 🔹 SORT
+    df = df.sort_values(by=total_col, ascending=False)
+
+    st.dataframe(df)
 # ================= CERTIFICATES =================
 if menu == "Certificates":
     st.subheader("Generate Certificates")
