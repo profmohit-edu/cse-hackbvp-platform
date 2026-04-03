@@ -17,8 +17,6 @@ SHEET_URL = "https://docs.google.com/spreadsheets/d/1lLjkJ2IFxZTbKhJV_KCoTZqD1fK
 ADMIN_USER = "admin"
 ADMIN_PASS = "admin123"
 
-EVENT_END = datetime.now() + timedelta(hours=2)
-
 WEIGHTS = {
     "Idea": 0.20,
     "Innovation": 0.30,
@@ -28,14 +26,13 @@ WEIGHTS = {
 }
 
 # ================= SESSION =================
-if "role" not in st.session_state:
-    st.session_state.role = "Guest"
-if "judge_name" not in st.session_state:
-    st.session_state.judge_name = ""
-if "prev_top" not in st.session_state:
-    st.session_state.prev_top = None
+if "event_end" not in st.session_state:
+    st.session_state.event_end = datetime.now() + timedelta(hours=2)
+
 if "winner_shown" not in st.session_state:
     st.session_state.winner_shown = False
+
+EVENT_END = st.session_state.event_end
 
 # ================= GOOGLE SHEETS =================
 @st.cache_resource
@@ -85,52 +82,24 @@ def get_leaderboard():
 dark_mode = st.toggle("🌙 Dark Mode", value=False)
 
 if dark_mode:
-    bg_color = "#0f172a"
-    text_color = "#f1f5f9"
-    card_bg = "linear-gradient(135deg, #1e293b, #0f172a)"
+    bg = "#0f172a"
+    text = "#f1f5f9"
 else:
-    bg_color = "#ffffff"
-    text_color = "#1e293b"
-    card_bg = "linear-gradient(135deg, #f8fafc, #e2e8f0)"
+    bg = "#ffffff"
+    text = "#1e293b"
 
-# ================= GLOBAL STYLE =================
+# ================= STYLE =================
 st.markdown(f"""
 <style>
-[data-testid="stSidebar"] {{display:none;}}
+body {{ background:{bg}; color:{text}; }}
 
-body {{
-    background-color: {bg_color};
-    color: {text_color};
-}}
-
-.header-card {{
-    background: {card_bg};
-    padding: 25px;
-    border-radius: 18px;
-    box-shadow: 0 8px 25px rgba(0,0,0,0.15);
-    margin-bottom: 20px;
-    animation: glow 3s infinite alternate;
-}}
-
-@keyframes glow {{
-    from {{ box-shadow: 0 0 10px rgba(59,130,246,0.3); }}
-    to {{ box-shadow: 0 0 25px rgba(59,130,246,0.7); }}
-}}
-
-.center {{
-    text-align:center;
-}}
-
-.card {{
+.header {{
     padding:20px;
     border-radius:15px;
-    font-size:22px;
-    font-weight:bold;
+    box-shadow:0 5px 20px rgba(0,0,0,0.15);
+    text-align:center;
+    margin-bottom:20px;
 }}
-
-.gold {{background:#FFD700;}}
-.silver {{background:#C0C0C0;}}
-.bronze {{background:#CD7F32;}}
 
 .banner {{
     background:#2563eb;
@@ -140,65 +109,55 @@ body {{
     text-align:center;
     font-size:18px;
 }}
+
+.card {{
+    padding:20px;
+    border-radius:15px;
+    font-weight:bold;
+    text-align:center;
+}}
+
+.gold {{background:#FFD700;}}
+.silver {{background:#C0C0C0;}}
+.bronze {{background:#CD7F32;}}
 </style>
 """, unsafe_allow_html=True)
 
 # ================= HEADER =================
 st.markdown("""
-<div class="header-card">
-
-<div style="display:flex;align-items:center;justify-content:center;gap:15px;">
-<img src="https://upload.wikimedia.org/wikipedia/en/0/0c/Bharati_Vidyapeeth_Deemed_University_logo.png" width="55">
-<div style="font-size:34px;font-weight:700;">🚀 CSE Hackathon Platform</div>
-</div>
-
-<div class="center" style="margin-top:10px;">
+<div class="header">
+<img src="https://upload.wikimedia.org/wikipedia/en/0/0c/Bharati_Vidyapeeth_Deemed_University_logo.png" width="60"><br>
+<h2>🚀 CSE Hackathon Platform</h2>
 <b>Developed by Mr. Mohit Tiwari</b><br>
 Assistant Professor, Department of Computer Science and Engineering<br>
 Cybersecurity & AI Research<br>
 Bharati Vidyapeeth’s College of Engineering, Delhi
 </div>
-
-</div>
 """, unsafe_allow_html=True)
 
-# ================= LANDING DASHBOARD =================
-st.markdown('<div class="banner">🏁 Hackathon Live Dashboard</div>', unsafe_allow_html=True)
+# ================= NAVIGATION =================
+menu = st.radio(
+    "Navigation",
+    ["🏠 Dashboard","📥 Submit","🧑‍⚖️ Evaluate","🏆 Leaderboard","📄 Certificates"],
+    horizontal=True
+)
 
+# ================= TIMER =================
 remaining = EVENT_END - datetime.now()
-mins, secs = divmod(int(remaining.total_seconds()), 60)
-
-st.markdown(f"<h2 class='center'>⏱️ Time Left: {mins}m {secs}s</h2>", unsafe_allow_html=True)
-
-st.info("📢 Announcement: Evaluation in progress. Judges please submit scores on time.")
-
-# ================= LOGIN =================
-st.sidebar.title("Login")
-
-role = st.sidebar.selectbox("Role", ["Guest", "Admin", "Judge"])
-
-if role == "Admin":
-    u = st.sidebar.text_input("Username")
-    p = st.sidebar.text_input("Password", type="password")
-    if st.sidebar.button("Login"):
-        if u == ADMIN_USER and p == ADMIN_PASS:
-            st.session_state.role = "Admin"
-
-elif role == "Judge":
-    name = st.sidebar.text_input("Judge Name")
-    if st.sidebar.button("Login"):
-        if name:
-            st.session_state.role = "Judge"
-            st.session_state.judge_name = name.strip().lower()
-
-menu = st.sidebar.radio("Menu", [
-    "Dashboard","Submit","Evaluate","Leaderboard","Certificates"
-])
+if remaining.total_seconds() > 0:
+    mins, secs = divmod(int(remaining.total_seconds()), 60)
+    st.markdown(f"<h3 style='text-align:center;'>⏱️ {mins}m {secs}s left</h3>", unsafe_allow_html=True)
+else:
+    st.markdown("<h3 style='text-align:center;'>⏱️ Time Over</h3>", unsafe_allow_html=True)
 
 # ================= DASHBOARD =================
-if menu == "Dashboard":
+if menu == "🏠 Dashboard":
+    st.markdown('<div class="banner">🏁 Hackathon Live Dashboard</div>', unsafe_allow_html=True)
+
     sub = load_sub()
     ev = load_eval()
+
+    st.info("📢 Evaluation in progress. Judges please submit scores.")
 
     c1,c2,c3 = st.columns(3)
     c1.metric("Ideas", len(sub))
@@ -206,7 +165,7 @@ if menu == "Dashboard":
     c3.metric("Teams", ev["Team Name"].nunique() if not ev.empty else 0)
 
 # ================= SUBMIT =================
-if menu == "Submit":
+if menu == "📥 Submit":
     t = st.text_input("Team Name")
     m = st.text_area("Members")
     d = st.text_input("Domain")
@@ -214,10 +173,10 @@ if menu == "Submit":
 
     if st.button("Submit"):
         sub_sheet.append_row([t,m,d,i])
-        st.success("Submitted")
+        st.success("Submitted successfully")
 
 # ================= EVALUATE =================
-if menu == "Evaluate":
+if menu == "🧑‍⚖️ Evaluate":
     df = load_sub()
     team = st.selectbox("Team", df["Team Name"])
 
@@ -235,18 +194,19 @@ if menu == "Evaluate":
         impact*WEIGHTS["Impact"],2
     )
 
+    st.write("Total Score:", total)
+
     if st.button("Submit Score"):
         eval_sheet.append_row([
-            team,
-            st.session_state.judge_name,
+            team,"Judge",
             idea,innovation,tech,pres,impact,
             total,
             datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         ])
-        st.success("Saved")
+        st.success("Score saved")
 
 # ================= LEADERBOARD =================
-if menu == "Leaderboard":
+if menu == "🏆 Leaderboard":
     df = get_leaderboard()
 
     if df.empty:
@@ -274,11 +234,11 @@ if menu == "Leaderboard":
             st.success(f"🏆 Winner: {df.iloc[0]['Team Name']}")
 
 # ================= CERTIFICATE =================
-if menu == "Certificates":
+if menu == "📄 Certificates":
     sub = load_sub()
     team = st.selectbox("Team", sub["Team Name"])
 
-    if st.button("Generate"):
+    if st.button("Generate Certificate"):
         buffer = BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=A4)
         styles = getSampleStyleSheet()
@@ -291,3 +251,7 @@ if menu == "Certificates":
         buffer.seek(0)
 
         st.download_button("Download", buffer, f"{team}.pdf")
+
+# ================= AUTO REFRESH =================
+time.sleep(5)
+st.rerun()
