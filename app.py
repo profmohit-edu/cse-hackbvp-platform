@@ -72,15 +72,24 @@ def connect():
 wb = connect()
 
 def ensure_sheet(name, headers):
-    # Assumes you already created "Submissions" and "Evaluations" tabs manually
-    ws = wb.worksheet(name)
+    try:
+        ws = wb.worksheet(name)
+    except Exception as e:
+        st.error(
+            f"Google Sheets service is temporarily unavailable while opening "
+            f"worksheet '{name}'. Please wait a minute and refresh the page."
+        )
+        st.stop()
+
     try:
         values = ws.get_all_values()
     except Exception:
         values = []
+
     if not values or values[0] != headers:
         ws.clear()
         ws.append_row(headers)
+
     return ws
 
 sub_sheet = ensure_sheet("Submissions", SUBMISSION_HEADERS)
