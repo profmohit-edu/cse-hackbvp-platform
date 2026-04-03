@@ -1,13 +1,12 @@
 # =========================================
-# 🚀 CSE Hackathon Platform
+# 🚀 CSE Hackathon Platform (SQLite-backed)
 # Developed by Mr. Mohit Tiwari
 # Bharati Vidyapeeth’s College of Engineering, Delhi
 # =========================================
 
 import streamlit as st
 import pandas as pd
-import gspread
-from google.oauth2.service_account import Credentials
+import sqlite3
 from datetime import datetime, timedelta
 from io import BytesIO
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
@@ -17,23 +16,23 @@ from reportlab.lib.styles import getSampleStyleSheet
 # ------------ CONFIG ------------
 st.set_page_config(page_title="CSE Hackathon Platform", layout="wide")
 
-SHEET_URL = "https://docs.google.com/spreadsheets/d/1lLjkJ2IFxZTbKhJV_KCoTZqD1fKrDN5OT5e1qhe7iCE/edit"
+DB_PATH = "hackathon.db"
 
 ADMIN_USER = st.secrets.get("admin_user", "admin")
 ADMIN_PASS = st.secrets.get("admin_pass", "admin123")
 
-SUBMISSION_HEADERS = ["Team Name", "Members", "Domain", "Idea"]
+SUBMISSION_HEADERS = ["team_name", "members", "domain", "idea"]
 EVALUATION_HEADERS = [
-    "Team Name", "Judge", "Idea Score", "Innovation",
-    "Technical", "Presentation", "Impact", "Total", "Time"
+    "team_name", "judge", "idea_score", "innovation",
+    "technical", "presentation", "impact", "total", "time"
 ]
 
 WEIGHTS = {
-    "Idea Score": 0.20,
-    "Innovation": 0.30,
-    "Technical": 0.30,
-    "Presentation": 0.10,
-    "Impact": 0.10
+    "idea_score": 0.20,
+    "innovation": 0.30,
+    "technical": 0.30,
+    "presentation": 0.10,
+    "impact": 0.10
 }
 
 # ------------ SESSION STATE ------------
@@ -43,101 +42,153 @@ if "judge_name" not in st.session_state:
     st.session_state.judge_name = ""
 if "event_end" not in st.session_state:
     st.session_state.event_end = datetime.now() + timedelta(hours=2)
-if "winner_shown" not in st.session_state:
-    st.session_state.winner_shown = False
 if "prev_top_team" not in st.session_state:
     st.session_state.prev_top_team = None
 
-# ------------ HELPERS ------------
+# ------------ DB HELPERS ------------
+def get_conn():
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+def init_db():
+    conn = get_conn()
+    cur = conn.cursor()
+
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS submissions (
+            team_name TEXT PRIMARY KEY,
+            members   TEXT,
+            domain    TEXT,
+            idea      TEXT
+        );
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS evaluations (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            team_name  TEXT,
+            judge      TEXT,
+            idea_score INTEGER,
+            innovation INTEGER,
+            technical  INTEGER,
+            presentation INTEGER,
+            impact     INTEGER,
+            total      REAL,
+            time       TEXT
+        );
+        """
+    )
+    conn.commit()
+    conn.close()
+
+init_db()
+
 def compute_score(idea, innovation, tech, pres, impact):
     return round(
-        idea * WEIGHTS["Idea Score"]
-        + innovation * WEIGHTS["Innovation"]
-        + tech * WEIGHTS["Technical"]
-        + pres * WEIGHTS["Presentation"]
-        + impact * WEIGHTS["Impact"],
+        idea * WEIGHTS["idea_score"]
+        + innovation * WEIGHTS["innovation"]
+        + tech * WEIGHTS["technical"]
+        + pres * WEIGHTS["presentation"]
+        + impact * WEIGHTS["impact"],
         2
     )
 
-# ------------ GOOGLE SHEETS CONNECT ------------
-@st.cache_resource
-def connect():
-    creds = Credentials.from_service_account_info(
-        st.secrets["gcp_service_account"],
-        scopes=["https://www.googleapis.com/auth/spreadsheets"]
+# ------------ DATA ACCESS LAYER ------------
+@st.cache_data(ttl=60)
+def load_submissions_df():
+    conn = get_conn()
+    df = pd.read_sql_query("SELECT * FROM submissions", conn)
+    conn.close()
+    return df
+
+@st.cache_data(ttl=60)
+def load_evaluations_df():
+    conn = get_conn()
+    df = pd.read_sql_query("SELECT * FROM evaluations", conn)
+    conn.close()
+    return df
+
+def add_submission(team_name, members, domain, idea):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT OR REPLACE INTO submissions (team_name, members, domain, idea)
+        VALUES (?, ?, ?, ?)
+        """,
+        (team_name, members, domain, idea),
     )
-    client = gspread.authorize(creds)
-    return client.open_by_url(SHEET_URL)
+    conn.commit()
+    conn.close()
+    st.cache_data.clear()
 
-wb = connect()
-
-def ensure_sheet(name, headers):
-    try:
-        ws = wb.worksheet(name)
-    except Exception as e:
-        st.error(
-            f"Google Sheets service is temporarily unavailable while opening "
-            f"worksheet '{name}'. Please wait a minute and refresh the page."
+def bulk_add_submissions(df: pd.DataFrame):
+    conn = get_conn()
+    cur = conn.cursor()
+    for _, row in df.iterrows():
+        cur.execute(
+            """
+            INSERT OR REPLACE INTO submissions (team_name, members, domain, idea)
+            VALUES (?, ?, ?, ?)
+            """,
+            (
+                str(row.get("Team Name", "")).strip(),
+                str(row.get("Members", "")),
+                str(row.get("Domain", "")),
+                str(row.get("Idea", "")),
+            ),
         )
-        st.stop()
+    conn.commit()
+    conn.close()
+    st.cache_data.clear()
 
-    try:
-        values = ws.get_all_values()
-    except Exception:
-        values = []
+def add_evaluation(team_name, judge, idea, innovation, tech, pres, impact, total):
+    conn = get_conn()
+    cur = conn.cursor()
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    cur.execute(
+        """
+        INSERT INTO evaluations (
+            team_name, judge, idea_score, innovation, technical,
+            presentation, impact, total, time
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (team_name, judge, idea, innovation, tech, pres, impact, total, now_str),
+    )
+    conn.commit()
+    conn.close()
+    st.cache_data.clear()
 
-    if not values or values[0] != headers:
-        ws.clear()
-        ws.append_row(headers)
+def has_evaluation(team_name, judge):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT 1 FROM evaluations
+        WHERE team_name = ? AND judge = ?
+        LIMIT 1
+        """,
+        (team_name, judge),
+    )
+    row = cur.fetchone()
+    conn.close()
+    return row is not None
 
-    return ws
+def get_leaderboard_df():
+    sub = load_submissions_df()
+    ev = load_evaluations_df()
+    if ev.empty or sub.empty:
+        return pd.DataFrame()
 
-sub_sheet = ensure_sheet("Submissions", SUBMISSION_HEADERS)
-eval_sheet = ensure_sheet("Evaluations", EVALUATION_HEADERS)
-
-# ------------ DATA LOADERS (CACHED) ------------
-@st.cache_data(ttl=60)
-def load_sub():
-    try:
-        df = pd.DataFrame(sub_sheet.get_all_records())
-        if df.empty:
-            df = pd.DataFrame(columns=SUBMISSION_HEADERS)
-        for c in SUBMISSION_HEADERS:
-            if c not in df.columns:
-                df[c] = ""
-        return df[SUBMISSION_HEADERS]
-    except Exception:
-        sub_sheet.clear()
-        sub_sheet.append_row(SUBMISSION_HEADERS)
-        return pd.DataFrame(columns=SUBMISSION_HEADERS)
-
-@st.cache_data(ttl=60)
-def load_eval():
-    try:
-        df = pd.DataFrame(eval_sheet.get_all_records())
-        if df.empty:
-            df = pd.DataFrame(columns=EVALUATION_HEADERS)
-        for c in EVALUATION_HEADERS:
-            if c not in df.columns:
-                df[c] = ""
-        return df[EVALUATION_HEADERS]
-    except Exception:
-        eval_sheet.clear()
-        eval_sheet.append_row(EVALUATION_HEADERS)
-        return pd.DataFrame(columns=EVALUATION_HEADERS)
-
-def get_leaderboard():
-    sub = load_sub()
-    ev = load_eval()
-    if ev.empty:
-        return pd.DataFrame(columns=SUBMISSION_HEADERS + ["Final Score"])
-    ev["Total"] = pd.to_numeric(ev["Total"], errors="coerce")
-    agg = ev.groupby("Team Name")["Total"].mean().reset_index()
-    agg.rename(columns={"Total": "Final Score"}, inplace=True)
-    df = sub.merge(agg, on="Team Name", how="left")
-    df["Final Score"] = pd.to_numeric(df["Final Score"], errors="coerce")
-    df["Final Score"] = df["Final Score"].round(2)
-    df = df.sort_values(by="Final Score", ascending=False, na_position="last")
+    agg = ev.groupby("team_name")["total"].mean().reset_index()
+    agg.rename(columns={"total": "final_score"}, inplace=True)
+    df = sub.merge(agg, on="team_name", how="left")
+    df["final_score"] = df["final_score"].round(2)
+    df = df.sort_values(by="final_score", ascending=False, na_position="last")
     return df
 
 # ------------ HEADER UI ------------
@@ -192,7 +243,7 @@ st.write("Logged in as:", st.session_state.role)
 # ------------ MENU ------------
 menu = ["Dashboard", "Leaderboard"]
 if st.session_state.role == "Admin":
-    menu += ["Submit", "Bulk Upload", "Certificates", "Control"]
+    menu += ["Submit", "Bulk Upload", "Certificates", "Control", "Export"]
 if st.session_state.role == "Judge":
     menu += ["Evaluate"]
 
@@ -212,8 +263,8 @@ event_active = remaining.total_seconds() > 0
 # ------------ DASHBOARD ------------
 if choice == "Dashboard":
     st.info("Evaluation in progress...")
-    sub = load_sub()
-    ev = load_eval()
+    sub = load_submissions_df()
+    ev = load_evaluations_df()
     c1, c2 = st.columns(2)
     c1.metric("Submissions", len(sub))
     c2.metric("Evaluations", len(ev))
@@ -233,24 +284,18 @@ if choice == "Submit":
             if not t_clean:
                 st.error("Team name is required.")
             else:
-                sub_df = load_sub()
-                if sub_df.empty or "Team Name" not in sub_df.columns:
-                    existing = []
-                else:
-                    existing = sub_df["Team Name"].astype(str).tolist()
-
-                if t_clean in existing:
+                sub_df = load_submissions_df()
+                if not sub_df.empty and t_clean in sub_df["team_name"].tolist():
                     st.error("Team name already exists.")
                 else:
-                    sub_sheet.append_row([t_clean, m, d, i])
-                    st.cache_data.clear()
+                    add_submission(t_clean, m, d, i)
                     st.success("✅ Submission recorded")
 
 # ------------ BULK UPLOAD ------------
 if choice == "Bulk Upload":
     st.write("Use this template for bulk upload (do not change header names).")
 
-    sample_df = pd.DataFrame(columns=SUBMISSION_HEADERS)
+    sample_df = pd.DataFrame(columns=["Team Name", "Members", "Domain", "Idea"])
     sample_buf = BytesIO()
     sample_df.to_excel(sample_buf, index=False)
     sample_buf.seek(0)
@@ -267,9 +312,7 @@ if choice == "Bulk Upload":
         df = pd.read_excel(file)
         st.dataframe(df)
         if st.button("Upload"):
-            for _, r in df.iterrows():
-                sub_sheet.append_row(r.tolist())
-            st.cache_data.clear()
+            bulk_add_submissions(df)
             st.success("✅ Bulk data uploaded")
 
 # ------------ EVALUATE ------------
@@ -279,18 +322,12 @@ if choice == "Evaluate":
     elif not event_active:
         st.error("Evaluation is closed. Event time is over.")
     else:
-        df = load_sub()
+        df = load_submissions_df()
         if df.empty:
             st.warning("No teams available to evaluate.")
         else:
-            team = st.selectbox("Select Team", df["Team Name"])
-            ev = load_eval()
-            already = (
-                not ev.empty
-                and ((ev["Team Name"] == team)
-                     & (ev["Judge"] == st.session_state.judge_name)).any()
-            )
-            if already:
+            team = st.selectbox("Select Team", df["team_name"])
+            if has_evaluation(team, st.session_state.judge_name):
                 st.warning("You have already evaluated this team.")
             else:
                 idea = st.slider("Idea", 0, 10)
@@ -303,8 +340,7 @@ if choice == "Evaluate":
                 st.info(f"Total Score: {total}")
 
                 if st.button("Submit Score"):
-                    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    eval_sheet.append_row([
+                    add_evaluation(
                         team,
                         st.session_state.judge_name,
                         idea,
@@ -313,18 +349,20 @@ if choice == "Evaluate":
                         pres,
                         impact,
                         total,
-                        now_str
-                    ])
-                    st.cache_data.clear()
+                    )
                     st.success("✅ Evaluation submitted")
 
 # ------------ LEADERBOARD ------------
 if choice == "Leaderboard":
-    df = get_leaderboard()
+    df = get_leaderboard_df()
     if not df.empty:
-        display_cols = [c for c in ["Team Name", "Domain", "Final Score"] if c in df.columns]
-        st.dataframe(df[display_cols])
-        top = df.iloc[0]["Team Name"]
+        display_cols = ["team_name", "domain", "final_score"]
+        st.dataframe(df[display_cols].rename(columns={
+            "team_name": "Team Name",
+            "domain": "Domain",
+            "final_score": "Final Score",
+        }))
+        top = df.iloc[0]["team_name"]
         st.markdown(f"🏆 **Current Leader:** {top}")
         if st.session_state.prev_top_team != top:
             st.session_state.prev_top_team = top
@@ -334,11 +372,11 @@ if choice == "Leaderboard":
 
 # ------------ CERTIFICATES ------------
 if choice == "Certificates":
-    df = load_sub()
+    df = load_submissions_df()
     if df.empty:
         st.info("No teams found.")
     else:
-        team = st.selectbox("Select Team", df["Team Name"])
+        team = st.selectbox("Select Team", df["team_name"])
         if st.button("Generate Certificate"):
             buf = BytesIO()
             doc = SimpleDocTemplate(buf, pagesize=A4)
@@ -362,3 +400,38 @@ if choice == "Control":
     if st.button("Reset Timer"):
         st.session_state.event_end = datetime.now() + timedelta(minutes=mins)
         st.success("Timer reset successfully!")
+
+# ------------ EXPORT (optional) ------------
+if choice == "Export":
+    st.subheader("Export data as Excel files")
+
+    sub = load_submissions_df()
+    ev = load_evaluations_df()
+
+    if st.button("Refresh Data"):
+        st.cache_data.clear()
+        sub = load_submissions_df()
+        ev = load_evaluations_df()
+        st.success("Data refreshed from database.")
+
+    if not sub.empty:
+        buf_sub = BytesIO()
+        sub.to_excel(buf_sub, index=False)
+        buf_sub.seek(0)
+        st.download_button(
+            "⬇️ Download Submissions.xlsx",
+            data=buf_sub,
+            file_name="submissions.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+
+    if not ev.empty:
+        buf_ev = BytesIO()
+        ev.to_excel(buf_ev, index=False)
+        buf_ev.seek(0)
+        st.download_button(
+            "⬇️ Download Evaluations.xlsx",
+            data=buf_ev,
+            file_name="evaluations.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
