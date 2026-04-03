@@ -24,7 +24,8 @@ ADMIN_USER = st.secrets.get("admin_user", "admin")
 ADMIN_PASS = st.secrets.get("admin_pass", "admin123")
 
 SUBMISSION_HEADERS = ["Team Name", "Members", "Domain", "Idea"]
-EVALUATION_HEADERS = ["Team Name", "Judge", "Idea Score", "Innovation", "Technical", "Presentation", "Impact", "Total", "Time"]
+EVALUATION_HEADERS = ["Team Name", "Judge", "Idea Score", "Innovation",
+                      "Technical", "Presentation", "Impact", "Total", "Time"]
 
 WEIGHTS = {
     "Idea Score": 0.20,
@@ -46,6 +47,17 @@ if "winner_shown" not in st.session_state:
 if "prev_top_team" not in st.session_state:
     st.session_state.prev_top_team = None
 
+# ------------ HELPERS ------------
+def compute_score(idea, innovation, tech, pres, impact):
+    return round(
+        idea * WEIGHTS["Idea Score"]
+        + innovation * WEIGHTS["Innovation"]
+        + tech * WEIGHTS["Technical"]
+        + pres * WEIGHTS["Presentation"]
+        + impact * WEIGHTS["Impact"],
+        2
+    )
+
 # ------------ GOOGLE SHEETS CONNECT ------------
 @st.cache_resource
 def connect():
@@ -61,7 +73,7 @@ wb = connect()
 def ensure_sheet(name, headers):
     try:
         ws = wb.worksheet(name)
-    except:
+    except Exception:
         ws = wb.add_worksheet(title=name, rows=1000, cols=20)
     values = ws.get_all_values()
     if not values or values[0] != headers:
@@ -75,15 +87,17 @@ eval_sheet = ensure_sheet("Evaluations", EVALUATION_HEADERS)
 def load_sub():
     try:
         return pd.DataFrame(sub_sheet.get_all_records())
-    except:
-        sub_sheet.clear(); sub_sheet.append_row(SUBMISSION_HEADERS)
+    except Exception:
+        sub_sheet.clear()
+        sub_sheet.append_row(SUBMISSION_HEADERS)
         return pd.DataFrame()
 
 def load_eval():
     try:
         return pd.DataFrame(eval_sheet.get_all_records())
-    except:
-        eval_sheet.clear(); eval_sheet.append_row(EVALUATION_HEADERS)
+    except Exception:
+        eval_sheet.clear()
+        eval_sheet.append_row(EVALUATION_HEADERS)
         return pd.DataFrame()
 
 def get_leaderboard():
@@ -91,11 +105,14 @@ def get_leaderboard():
     ev = load_eval()
     if ev.empty:
         return pd.DataFrame()
-    ev["Total"] = pd.to_numeric(ev["Total"], errors='coerce')
+    ev["Total"] = pd.to_numeric(ev["Total"], errors="coerce")
     agg = ev.groupby("Team Name")["Total"].mean().reset_index()
     agg.rename(columns={"Total": "Final Score"}, inplace=True)
     df = sub.merge(agg, on="Team Name", how="left")
-    return df.sort_values(by="Final Score", ascending=False)
+    if "Final Score" in df.columns:
+        df["Final Score"] = df["Final Score"].round(2)
+        df = df.sort_values(by="Final Score", ascending=False)
+    return df
 
 # ------------ HEADER UI ------------
 st.markdown("""
@@ -118,23 +135,31 @@ style="width:100%;max-height:250px;object-fit:cover;border-radius:14px;margin:10
 
 # ------------ LOGIN ------------
 with st.expander("🔐 Login"):
-    role = st.selectbox("Login As", ["Guest", "Admin", "Judge"])
+    role_choice = st.selectbox("Login As", ["Guest", "Admin", "Judge"])
 
-    if role == "Admin":
+    if role_choice == "Admin":
         u = st.text_input("Username")
         p = st.text_input("Password", type="password")
         if st.button("Login Admin"):
             if u == ADMIN_USER and p == ADMIN_PASS:
                 st.session_state.role = "Admin"
                 st.success("✅ Admin logged in")
+            else:
+                st.error("Invalid admin credentials.")
 
-    if role == "Judge":
+    if role_choice == "Judge":
         name = st.text_input("Judge Name")
         if st.button("Login Judge"):
-            if name:
+            if name.strip():
                 st.session_state.role = "Judge"
-                st.session_state.judge_name = name
+                st.session_state.judge_name = name.strip()
                 st.success(f"✅ Judge {name} logged in")
+            else:
+                st.error("Please enter your name.")
+
+    if role_choice == "Guest":
+        st.session_state.role = "Guest"
+        st.session_state.judge_name = ""
 
 st.write("Logged in as:", st.session_state.role)
 
@@ -149,30 +174,45 @@ choice = st.radio("Navigation", menu, horizontal=True)
 
 # ------------ TIMER DISPLAY ------------
 remaining = st.session_state.event_end - datetime.now()
-st.write("⏱️ Time Left:", str(remaining).split(".")[0])
+if remaining.total_seconds() <= 0:
+    st.warning("Event time is over.")
+    remaining_str = "00:00:00"
+else:
+    remaining_str = str(remaining).split(".")[0]
+st.write("⏱️ Time Left:", remaining_str)
+
+event_active = remaining.total_seconds() > 0
 
 # ------------ DASHBOARD ------------
 if choice == "Dashboard":
     st.info("Evaluation in progress...")
-    sub = load_sub(); ev = load_eval()
+    sub = load_sub()
+    ev = load_eval()
     c1, c2 = st.columns(2)
     c1.metric("Submissions", len(sub))
     c2.metric("Evaluations", len(ev))
 
 # ------------ SUBMIT ------------
 if choice == "Submit":
-    t = st.text_input("Team Name")
-    m = st.text_area("Members")
-    d = st.text_input("Domain")
-    i = st.text_area("Idea")
+    if not event_active:
+        st.error("Submissions are closed. Event time is over.")
+    else:
+        t = st.text_input("Team Name")
+        m = st.text_area("Members")
+        d = st.text_input("Domain")
+        i = st.text_area("Idea")
 
-    if st.button("Submit Idea"):
-        existing = load_sub()["Team Name"].tolist()
-        if t in existing:
-            st.error("Team name already exists.")
-        else:
-            sub_sheet.append_row([t,m,d,i])
-            st.success("✅ Submission recorded")
+        if st.button("Submit Idea"):
+            t_clean = t.strip()
+            if not t_clean:
+                st.error("Team name is required.")
+            else:
+                existing = load_sub()["Team Name"].tolist()
+                if t_clean in existing:
+                    st.error("Team name already exists.")
+                else:
+                    sub_sheet.append_row([t_clean, m, d, i])
+                    st.success("✅ Submission recorded")
 
 # ------------ BULK UPLOAD ------------
 if choice == "Bulk Upload":
@@ -187,31 +227,57 @@ if choice == "Bulk Upload":
 
 # ------------ EVALUATE ------------
 if choice == "Evaluate":
-    df = load_sub()
-    if df.empty:
-        st.warning("No teams available to evaluate.")
+    if not st.session_state.judge_name:
+        st.error("Please log in as a judge first.")
+    elif not event_active:
+        st.error("Evaluation is closed. Event time is over.")
     else:
-        team = st.selectbox("Select Team", df["Team Name"])
-        ev = load_eval()
-        if not ev.empty and ((ev["Team Name"] == team) & (ev["Judge"] == st.session_state.judge_name)).any():
-            st.warning("Already evaluated.")
+        df = load_sub()
+        if df.empty:
+            st.warning("No teams available to evaluate.")
         else:
-            idea = st.slider("Idea",0,10)
-            innovation = st.slider("Innovation",0,10)
-            tech = st.slider("Technical",0,10)
-            pres = st.slider("Presentation",0,10)
-            impact = st.slider("Impact",0,10)
-            total = round(idea*0.2 + innovation*0.3 + tech*0.3 + pres*0.1 + impact*0.1,2)
-            st.info(f"Total Score: {total}")
-            if st.button("Submit Score"):
-                eval_sheet.append_row([team, st.session_state.judge_name, idea, innovation, tech, pres, impact, total, str(datetime.now())])
-                st.success("✅ Evaluation submitted")
+            team = st.selectbox("Select Team", df["Team Name"])
+            ev = load_eval()
+            already = (
+                not ev.empty
+                and ((ev["Team Name"] == team)
+                     & (ev["Judge"] == st.session_state.judge_name)).any()
+            )
+            if already:
+                st.warning("You have already evaluated this team.")
+            else:
+                idea = st.slider("Idea", 0, 10)
+                innovation = st.slider("Innovation", 0, 10)
+                tech = st.slider("Technical", 0, 10)
+                pres = st.slider("Presentation", 0, 10)
+                impact = st.slider("Impact", 0, 10)
+
+                total = compute_score(idea, innovation, tech, pres, impact)
+                st.info(f"Total Score: {total}")
+
+                if st.button("Submit Score"):
+                    eval_sheet.append_row([
+                        team,
+                        st.session_state.judge_name,
+                        idea,
+                        innovation,
+                        tech,
+                        pres,
+                        impact,
+                        total,
+                        str(datetime.now())
+                    ])
+                    st.success("✅ Evaluation submitted")
 
 # ------------ LEADERBOARD ------------
 if choice == "Leaderboard":
     df = get_leaderboard()
     if not df.empty:
-        st.dataframe(df.style.background_gradient(subset=["Final Score"], cmap="Greens"))
+        # Show only key columns if present
+        display_cols = [c for c in ["Team Name", "Domain", "Final Score"] if c in df.columns]
+        st.dataframe(df[display_cols].style.background_gradient(
+            subset=["Final Score"], cmap="Greens"
+        ))
         top = df.iloc[0]["Team Name"]
         st.markdown(f"🏆 **Current Leader:** {top}")
         if st.session_state.prev_top_team != top:
@@ -223,19 +289,26 @@ if choice == "Leaderboard":
 # ------------ CERTIFICATES ------------
 if choice == "Certificates":
     df = load_sub()
-    team = st.selectbox("Select Team", df["Team Name"])
-    if st.button("Generate Certificate"):
-        buf = BytesIO()
-        doc = SimpleDocTemplate(buf, pagesize=A4)
-        styles = getSampleStyleSheet()
-        story = [
-            Paragraph("Certificate of Achievement", styles["Title"]),
-            Spacer(1,20),
-            Paragraph(f"Awarded to <b>{team}</b>", styles["Normal"])
-        ]
-        doc.build(story)
-        buf.seek(0)
-        st.download_button("⬇️ Download Certificate", buf, f"{team}.pdf")
+    if df.empty:
+        st.info("No teams found.")
+    else:
+        team = st.selectbox("Select Team", df["Team Name"])
+        if st.button("Generate Certificate"):
+            buf = BytesIO()
+            doc = SimpleDocTemplate(buf, pagesize=A4)
+            styles = getSampleStyleSheet()
+            story = [
+                Paragraph("Certificate of Achievement", styles["Title"]),
+                Spacer(1, 20),
+                Paragraph(f"Awarded to <b>{team}</b>", styles["Normal"]),
+            ]
+            doc.build(story)
+            buf.seek(0)
+            st.download_button(
+                "⬇️ Download Certificate",
+                buf,
+                f"{team}.pdf"
+            )
 
 # ------------ ADMIN CONTROL ------------
 if choice == "Control":
@@ -245,4 +318,4 @@ if choice == "Control":
         st.success("Timer reset successfully!")
 
 # ------------ AUTO REFRESH ------------
-st_autorefresh(interval=15000, key="data_refresh")
+st_autorefresh(interval=30000, key="data_refresh")
