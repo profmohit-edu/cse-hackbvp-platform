@@ -44,7 +44,7 @@ client = gspread.authorize(creds)
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1lLjkJ2IFxZTbKhJV_KCoTZqD1fKrDN5OT5e1qhe7iCE/edit"
 wb = client.open_by_url(SHEET_URL)
 
-sub_sheet = wb.worksheet("Sheet1")
+sub_sheet = wb.worksheet("Submissions")
 eval_sheet = wb.worksheet("Evaluations")
 
 # ---------------------------
