@@ -1,0 +1,6 @@
+const test=require('node:test'),assert=require('node:assert/strict'),c=require('../core.js');
+test('team registration persists a valid project model',()=>{const s=c.register({projects:[]},{teamName:'Test Team',projectTitle:'Test Project',members:'A, B',theme:'Education'});assert.equal(s.projects.length,1);assert.equal(s.projects[0].members.length,2)});
+test('registration rejects fewer than two members',()=>assert.throws(()=>c.register({projects:[]},{teamName:'T',projectTitle:'P',members:'A'}),/at least two/));
+test('mentor feedback advances a newly registered project',()=>{let s=c.register({projects:[]},{teamName:'T',projectTitle:'P',members:'A,B'});s=c.mentor(s,s.projects[0].id,'Validate the user need.');assert.equal(s.projects[0].stage,'Mentoring');assert.equal(s.projects[0].mentorFeedback.length,1)});
+test('evaluation totals four bounded criteria',()=>{let s=c.demo(),id=s.projects[0].id;s=c.evaluate(s,id,{innovation:20,technical:21,impact:22,presentation:19},'Good');assert.equal(s.projects[0].evaluation.total,82);assert.throws(()=>c.evaluate(s,id,{innovation:30,technical:1,impact:1,presentation:1}),/between 0 and 25/)});
+test('dashboard metrics derive from stored records',()=>{const m=c.metrics(c.demo());assert.equal(m.teams,2);assert.equal(m.participants,5);assert.equal(m.evaluated,1)});
